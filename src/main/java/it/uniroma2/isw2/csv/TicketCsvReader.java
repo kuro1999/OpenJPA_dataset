@@ -29,7 +29,6 @@ public class TicketCsvReader {
             int creationDateIndex = findColumnIndex(headers, "CreationDate", "creationDate");
             int resolutionDateIndex = findColumnIndex(headers, "ResolutionDate", "resolutionDate");
             int affectedVersionsIndex = findColumnIndex(headers, "AV", "AffectedVersions", "affectedVersions");
-            int fixCommitDateIndex = findColumnIndex(headers, "FixCommitDate", "fixCommitDate", "CommitDate", "commitDate");
 
             String line;
             while ((line = br.readLine()) != null) {
@@ -39,7 +38,6 @@ public class TicketCsvReader {
                 String creationDate = getField(fields, creationDateIndex);
                 String resolutionDate = getField(fields, resolutionDateIndex);
                 String affectedVersions = getField(fields, affectedVersionsIndex);
-                String fixCommitDate = getField(fields, fixCommitDateIndex);
 
                 if (ticketId.isBlank() || creationDate.isBlank()) {
                     continue;
@@ -49,8 +47,7 @@ public class TicketCsvReader {
                         ticketId,
                         creationDate,
                         resolutionDate,
-                        affectedVersions,
-                        fixCommitDate
+                        affectedVersions
                 ));
             }
         }

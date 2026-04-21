@@ -12,9 +12,16 @@ import java.util.List;
  * AV viene mantenuta dal CSV originale.
  * IV per ora viene lasciata vuota.
  *
- * Nota:
- * - OV = ultima release già disponibile quando il ticket viene aperto
- * - FV = prima release successiva al fix commit
+ * Assunzione di progetto:
+ * - il CSV dei ticket fornito da RetrieveTicketsID contiene solo CreationDate,
+ *   ResolutionDate e AffectedVersions;
+ * - non essendo disponibile la vera fix commit date, si assume
+ *   ResolutionDate == fix commit date.
+ *
+ * Quindi:
+ * - OV = release più recente già disponibile alla data di apertura del ticket
+ * - FV = prima release successiva alla ResolutionDate,
+ *        usata come proxy della fix commit date
  */
 public class TicketVersionEnricher {
 
@@ -26,7 +33,7 @@ public class TicketVersionEnricher {
 
         for (Ticket ticket : tickets) {
             String openingVersion = findOpeningVersion(ticket, releases);
-            String fixedVersion = findFixedVersionFromFixCommitDate(ticket, releases);
+            String fixedVersion = findFixedVersionFromResolutionDate(ticket, releases);
 
             EnhancedTicket enhancedTicket = new EnhancedTicket(
                     ticket.getTicketId(),
@@ -52,42 +59,53 @@ public class TicketVersionEnricher {
             return "";
         }
 
-        String openingVersion = "";
+        Release bestRelease = null;
+        LocalDateTime bestDate = null;
 
         for (Release release : releases) {
             LocalDateTime releaseDate = DateUtils.parseReleaseDate(release.getDate());
 
             /*
-             * OV = ultima release non successiva alla data di apertura del ticket.
+             * OV = release più recente con data <= creationDate.
+             * È la versione già disponibile quando il ticket viene aperto.
              */
             if (!releaseDate.isAfter(creationDate)) {
-                openingVersion = release.getVersionName();
-            } else {
-                break;
+                if (bestRelease == null || releaseDate.isAfter(bestDate)) {
+                    bestRelease = release;
+                    bestDate = releaseDate;
+                }
             }
         }
 
-        return openingVersion;
+        return bestRelease == null ? "" : bestRelease.getVersionName();
     }
 
-    private static String findFixedVersionFromFixCommitDate(Ticket ticket, List<Release> releases) {
-        LocalDateTime fixCommitDate = DateUtils.parseTicketDate(ticket.getFixCommitDate());
+    private static String findFixedVersionFromResolutionDate(Ticket ticket, List<Release> releases) {
+        LocalDateTime resolutionDate = DateUtils.parseTicketDate(ticket.getResolutionDate());
 
-        if (fixCommitDate == null) {
+        if (resolutionDate == null) {
             return "";
         }
 
+        Release bestRelease = null;
+        LocalDateTime bestDate = null;
+
         for (Release release : releases) {
             LocalDateTime releaseDate = DateUtils.parseReleaseDate(release.getDate());
 
             /*
-             * FV = prima release successiva al fix commit.
+             * FV = prima release con data > resolutionDate.
+             * In questo progetto, resolutionDate è usata come proxy
+             * della fix commit date.
              */
-            if (releaseDate.isAfter(fixCommitDate)) {
-                return release.getVersionName();
+            if (releaseDate.isAfter(resolutionDate)) {
+                if (bestRelease == null || releaseDate.isBefore(bestDate)) {
+                    bestRelease = release;
+                    bestDate = releaseDate;
+                }
             }
         }
 
-        return "";
+        return bestRelease == null ? "" : bestRelease.getVersionName();
     }
 }
