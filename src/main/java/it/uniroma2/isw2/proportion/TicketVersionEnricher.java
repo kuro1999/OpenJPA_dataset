@@ -11,6 +11,10 @@ import java.util.List;
  * Classe che arricchisce i ticket con OV e FV.
  * AV viene mantenuta dal CSV originale.
  * IV per ora viene lasciata vuota.
+ *
+ * Nota:
+ * - OV = ultima release già disponibile quando il ticket viene aperto
+ * - FV = prima release successiva al fix commit
  */
 public class TicketVersionEnricher {
 
@@ -22,7 +26,7 @@ public class TicketVersionEnricher {
 
         for (Ticket ticket : tickets) {
             String openingVersion = findOpeningVersion(ticket, releases);
-            String fixedVersion = findFixedVersion(ticket, releases);
+            String fixedVersion = findFixedVersionFromFixCommitDate(ticket, releases);
 
             EnhancedTicket enhancedTicket = new EnhancedTicket(
                     ticket.getTicketId(),
@@ -48,26 +52,38 @@ public class TicketVersionEnricher {
             return "";
         }
 
+        String openingVersion = "";
+
         for (Release release : releases) {
             LocalDateTime releaseDate = DateUtils.parseReleaseDate(release.getDate());
-            if (!releaseDate.isBefore(creationDate)) {
-                return release.getVersionName();
+
+            /*
+             * OV = ultima release non successiva alla data di apertura del ticket.
+             */
+            if (!releaseDate.isAfter(creationDate)) {
+                openingVersion = release.getVersionName();
+            } else {
+                break;
             }
         }
 
-        return "";
+        return openingVersion;
     }
 
-    private static String findFixedVersion(Ticket ticket, List<Release> releases) {
-        LocalDateTime resolutionDate = DateUtils.parseTicketDate(ticket.getResolutionDate());
+    private static String findFixedVersionFromFixCommitDate(Ticket ticket, List<Release> releases) {
+        LocalDateTime fixCommitDate = DateUtils.parseTicketDate(ticket.getFixCommitDate());
 
-        if (resolutionDate == null) {
+        if (fixCommitDate == null) {
             return "";
         }
 
         for (Release release : releases) {
             LocalDateTime releaseDate = DateUtils.parseReleaseDate(release.getDate());
-            if (!releaseDate.isBefore(resolutionDate)) {
+
+            /*
+             * FV = prima release successiva al fix commit.
+             */
+            if (releaseDate.isAfter(fixCommitDate)) {
                 return release.getVersionName();
             }
         }
