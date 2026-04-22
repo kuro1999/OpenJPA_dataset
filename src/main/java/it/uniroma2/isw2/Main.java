@@ -1,11 +1,10 @@
 package it.uniroma2.isw2;
 
-import it.uniroma2.isw2.csv.EnhancedTicketComputedAvCsvWriter;
-import it.uniroma2.isw2.csv.MappingCsvWriter;
-import it.uniroma2.isw2.csv.ReleaseCsvReader;
-import it.uniroma2.isw2.csv.TicketCsvReader;
-import it.uniroma2.isw2.model.Release;
-import it.uniroma2.isw2.model.Ticket;
+import it.uniroma2.isw2.csv.*;
+import it.uniroma2.isw2.labeling.BuggyClassReleaseLabeler;
+import it.uniroma2.isw2.labeling.FixCommitFinder;
+import it.uniroma2.isw2.labeling.SimplifiedSzzBuggyClassExtractor;
+import it.uniroma2.isw2.model.*;
 import it.uniroma2.isw2.map.TicketReleaseMapping;
 import it.uniroma2.isw2.proportion.*;
 import it.uniroma2.isw2.selector.ReleaseSelector;
@@ -33,6 +32,17 @@ public class Main {
     private static final String SELECTED_RELEASES_TICKET_MAP_FILE = PROJECT_NAME + "_SelectedReleaseTicketMap.csv";
     private static final String ESTIMATED_TICKETS_WITH_COMPUTED_AV_FILE =
             PROJECT_NAME + "_EstimatedTickets_WithComputedAV.csv";
+    private static final String PROJECT_REPO_PATH =
+            "C:\\Users\\edoar\\OneDrive\\Desktop\\ISW2\\openjpa";
+
+    private static final String TICKET_FIX_COMMITS_FILE =
+            PROJECT_NAME + "_TicketFixCommits.csv";
+
+    private static final String TICKET_BUGGY_CLASSES_FILE =
+            PROJECT_NAME + "_TicketBuggyClasses.csv";
+
+    private static final String BUGGY_CLASS_RELEASE_LABELS_FILE =
+            PROJECT_NAME + "_BuggyClassReleaseLabels.csv";
     public static void main(String[] args) {
         System.out.println("Avvio costruzione dataset del progetto " + PROJECT_NAME + ".");
 
@@ -122,6 +132,59 @@ public class Main {
             );
             System.out.println("File ticket con ComputedAV creato: "
                     + ESTIMATED_TICKETS_WITH_COMPUTED_AV_FILE);
+
+
+            /*
+             * STEP 7.1:
+             * Lettura del CSV con ComputedAV appena scritto.
+             * Da questo punto in poi il labeling usa il valore di ComputedAV presente nel file,
+             * senza ricalcolarlo in memoria.
+             */
+            List<TicketComputedAv> ticketsWithComputedAv =
+                    EstimatedTicketComputedAvCsvReader.loadTicketsWithComputedAv(
+                            ESTIMATED_TICKETS_WITH_COMPUTED_AV_FILE
+                    );
+            System.out.println("Ticket con ComputedAV letti dal CSV: " + ticketsWithComputedAv.size());
+
+            /*
+             * STEP 8:
+             * Ricerca dei fix commit associati ai ticket nel repository Git.
+             */
+            List<TicketFixCommit> ticketFixCommits =
+                    FixCommitFinder.findFixCommits(estimatedTickets, PROJECT_REPO_PATH);
+            TicketFixCommitCsvWriter.writeTicketFixCommits(TICKET_FIX_COMMITS_FILE, ticketFixCommits);
+            System.out.println("File ticket-fix commit creato: " + TICKET_FIX_COMMITS_FILE);
+
+            /*
+             * STEP 9:
+             * Estrazione semplificata delle buggy classes con SZZ:
+             * si parte dai fix commit, si analizzano le righe modificate e si risale
+             * alle linee precedenti tramite blame sul parent commit.
+             */
+            List<TicketBuggyClass> ticketBuggyClasses =
+                    SimplifiedSzzBuggyClassExtractor.extractBuggyClasses(ticketFixCommits, PROJECT_REPO_PATH);
+            TicketBuggyClassCsvWriter.writeTicketBuggyClasses(TICKET_BUGGY_CLASSES_FILE, ticketBuggyClasses);
+            System.out.println("File ticket-buggy classes creato: " + TICKET_BUGGY_CLASSES_FILE);
+
+            /*
+             * STEP 10:
+             * Espansione del labeling positivo sulle release selezionate:
+             * per ogni classe buggy di un ticket, si marcano come buggy = yes
+             * tutte le release presenti nella ComputedAV del ticket.
+             */
+            List<BuggyClassReleaseLabel> buggyClassReleaseLabels =
+                    BuggyClassReleaseLabeler.buildPositiveLabels(
+                            PROJECT_NAME,
+                            ticketsWithComputedAv,
+                            selectedReleases,
+                            ticketBuggyClasses
+                    );
+            BuggyClassReleaseLabelCsvWriter.writeLabels(
+                    BUGGY_CLASS_RELEASE_LABELS_FILE,
+                    buggyClassReleaseLabels
+            );
+            System.out.println("File labeling positivo classe-release creato: "
+                    + BUGGY_CLASS_RELEASE_LABELS_FILE);
         } catch (IOException e) {
             System.out.println("Errore durante l'esecuzione del flusso principale.");
             e.printStackTrace();
