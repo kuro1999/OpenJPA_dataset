@@ -1,5 +1,6 @@
 package it.uniroma2.isw2;
 
+import it.uniroma2.isw2.csv.EnhancedTicketComputedAvCsvWriter;
 import it.uniroma2.isw2.csv.MappingCsvWriter;
 import it.uniroma2.isw2.csv.ReleaseCsvReader;
 import it.uniroma2.isw2.csv.TicketCsvReader;
@@ -30,7 +31,8 @@ public class Main {
     private static final String ESTIMATED_TICKETS_FILE = PROJECT_NAME + "_EstimatedTickets.csv";
     private static final double RELEASES_TO_KEEP = 0.34;
     private static final String SELECTED_RELEASES_TICKET_MAP_FILE = PROJECT_NAME + "_SelectedReleaseTicketMap.csv";
-
+    private static final String ESTIMATED_TICKETS_WITH_COMPUTED_AV_FILE =
+            PROJECT_NAME + "_EstimatedTickets_WithComputedAV.csv";
     public static void main(String[] args) {
         System.out.println("Avvio costruzione dataset del progetto " + PROJECT_NAME + ".");
 
@@ -108,6 +110,18 @@ public class Main {
 
             System.out.println("Selezione release + fase AV -> IV -> P completate con successo.");
 
+            /*
+             * STEP 7:
+             * Scrittura di un CSV aggiuntivo con la colonna ComputedAV.
+             * ComputedAV è sempre calcolata come intervallo [IV, FV).
+             */
+            EnhancedTicketComputedAvCsvWriter.writeEnhancedTicketsWithComputedAv(
+                    ESTIMATED_TICKETS_WITH_COMPUTED_AV_FILE,
+                    estimatedTickets,
+                    allReleases
+            );
+            System.out.println("File ticket con ComputedAV creato: "
+                    + ESTIMATED_TICKETS_WITH_COMPUTED_AV_FILE);
         } catch (IOException e) {
             System.out.println("Errore durante l'esecuzione del flusso principale.");
             e.printStackTrace();
