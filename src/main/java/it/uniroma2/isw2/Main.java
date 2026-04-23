@@ -9,7 +9,7 @@ import it.uniroma2.isw2.selector.ReleaseSelector;
 
 import java.io.IOException;
 import java.util.List;
-
+import java.util.Map;
 
 
 /**
@@ -108,9 +108,9 @@ public class Main {
              * Costruzione in memoria della ComputedAV per ogni ticket stimato.
              * Nessun passaggio intermedio su CSV.
              */
-            List<TicketComputedAv> ticketsWithComputedAv =
-                    ProportionService.buildTicketsWithComputedAv(estimatedTickets, allReleases);
-            System.out.println("Ticket con ComputedAV costruiti in memoria: " + ticketsWithComputedAv.size());
+            Map<String, String> computedAvByTicketId =
+                    ProportionService.buildComputedAvMap(estimatedTickets, allReleases);
+            System.out.println("Ticket con ComputedAV costruiti in memoria: " + computedAvByTicketId.size());
 
             /*
              * STEP 8:
@@ -169,7 +169,7 @@ public class Main {
             List<BuggyClassReleaseLabel> buggyClassReleaseLabels =
                     BuggyClassReleaseLabeler.buildPositiveLabels(
                             PROJECT_NAME,
-                            ticketsWithComputedAv,
+                            computedAvByTicketId,
                             selectedReleases,
                             ticketBuggyClasses,
                             releaseJavaClasses

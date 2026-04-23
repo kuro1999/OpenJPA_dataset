@@ -1,10 +1,11 @@
 package it.uniroma2.isw2.proportion;
 
 import it.uniroma2.isw2.model.Release;
-import it.uniroma2.isw2.model.TicketComputedAv;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
@@ -94,10 +95,6 @@ public class ProportionService {
             return "";
         }
 
-        /*
-         * ComputedAV = [IV, FV)
-         * Quindi IV inclusa e FV esclusa.
-         */
         if (ivIndex >= fvIndex) {
             return "";
         }
@@ -115,15 +112,12 @@ public class ProportionService {
         return affectedReleaseNames.stream().collect(Collectors.joining(";"));
     }
 
-    public static List<TicketComputedAv> buildTicketsWithComputedAv(
-            List<EnhancedTicket> estimatedTickets,
-            List<Release> releases) {
+    public static Map<String, String> buildComputedAvMap(List<EnhancedTicket> tickets,
+                                                         List<Release> releases) {
+        Map<String, String> result = new HashMap<>();
 
-        List<TicketComputedAv> result = new ArrayList<>();
-
-        for (EnhancedTicket ticket : estimatedTickets) {
-            String computedAv = ProportionService.buildComputedAv(ticket, releases);
-            result.add(new TicketComputedAv(ticket.getTicketId(), computedAv));
+        for (EnhancedTicket ticket : tickets) {
+            result.put(ticket.getTicketId(), buildComputedAv(ticket, releases));
         }
 
         return result;

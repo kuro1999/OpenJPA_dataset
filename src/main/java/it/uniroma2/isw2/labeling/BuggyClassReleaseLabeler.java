@@ -4,10 +4,8 @@ import it.uniroma2.isw2.model.BuggyClassReleaseLabel;
 import it.uniroma2.isw2.model.Release;
 import it.uniroma2.isw2.model.ReleaseJavaClass;
 import it.uniroma2.isw2.model.TicketBuggyClass;
-import it.uniroma2.isw2.model.TicketComputedAv;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -19,13 +17,12 @@ public class BuggyClassReleaseLabeler {
     }
 
     public static List<BuggyClassReleaseLabel> buildPositiveLabels(String projectName,
-                                                                   List<TicketComputedAv> ticketsWithComputedAv,
+                                                                   Map<String, String> computedAvByTicketId,
                                                                    List<Release> selectedReleases,
                                                                    List<TicketBuggyClass> ticketBuggyClasses,
                                                                    List<ReleaseJavaClass> releaseJavaClasses) {
         List<BuggyClassReleaseLabel> result = new ArrayList<>();
 
-        Map<String, String> computedAvByTicketId = buildComputedAvMap(ticketsWithComputedAv);
         Set<String> existingClassReleaseKeys = buildExistingClassReleaseKeys(releaseJavaClasses);
         Set<String> seen = new HashSet<>();
 
@@ -77,15 +74,6 @@ public class BuggyClassReleaseLabeler {
         return result;
     }
 
-    private static Map<String, String> buildComputedAvMap(List<TicketComputedAv> ticketsWithComputedAv) {
-        Map<String, String> map = new HashMap<>();
-
-        for (TicketComputedAv ticket : ticketsWithComputedAv) {
-            map.put(ticket.getTicketId(), ticket.getComputedAv());
-        }
-
-        return map;
-    }
 
     private static Set<String> buildExistingClassReleaseKeys(List<ReleaseJavaClass> releaseJavaClasses) {
         Set<String> keys = new HashSet<>();
