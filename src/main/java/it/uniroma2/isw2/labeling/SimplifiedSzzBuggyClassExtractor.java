@@ -33,17 +33,25 @@ public class SimplifiedSzzBuggyClassExtractor {
             List<String> changedFiles = findChangedFiles(parentHash, fixCommit.getFixCommitHash(), repositoryPath);
 
             for (String filePath : changedFiles) {
-                if (!filePath.endsWith(".java")) {
+                String normalizedPath = normalizePath(filePath);
+
+                if (!isProductionJavaClass(normalizedPath)) {
                     continue;
                 }
 
-                if (isBuggyJavaFileByBlame(parentHash, fixCommit.getFixCommitHash(), filePath, repositoryPath)) {
-                    String key = fixCommit.getTicketId() + "|" + filePath;
+                if (isBuggyJavaFileByBlame(
+                        parentHash,
+                        fixCommit.getFixCommitHash(),
+                        normalizedPath,
+                        repositoryPath
+                )) {
+                    String key = fixCommit.getTicketId() + "|" + normalizedPath;
+
                     if (seen.add(key)) {
                         result.add(new TicketBuggyClass(
                                 fixCommit.getTicketId(),
                                 fixCommit.getFixCommitHash(),
-                                filePath
+                                normalizedPath
                         ));
                     }
                 }
@@ -151,9 +159,9 @@ public class SimplifiedSzzBuggyClassExtractor {
                 int oldCount = matcher.group(2) == null ? 1 : Integer.parseInt(matcher.group(2));
 
                 /*
-                 * Se oldCount = 0, l'hunk contiene solo aggiunte e quindi
-                 * la versione semplificata di SZZ non ha righe precedenti
-                 * da tracciare con blame.
+                 * Se oldCount = 0, l'hunk contiene solo aggiunte.
+                 * In questa versione semplificata di SZZ non possiamo fare blame
+                 * su righe precedenti che non esistono.
                  */
                 if (oldCount == 0) {
                     continue;
@@ -193,5 +201,15 @@ public class SimplifiedSzzBuggyClassExtractor {
             Thread.currentThread().interrupt();
             throw new IOException("Interruzione durante git blame.", e);
         }
+    }
+
+    private static boolean isProductionJavaClass(String path) {
+        return path.endsWith(".java")
+                && path.contains("/src/main/java/")
+                && !path.contains("/src/test/java/");
+    }
+
+    private static String normalizePath(String path) {
+        return path.replace("\\", "/").trim();
     }
 }

@@ -2,6 +2,7 @@ package it.uniroma2.isw2.labeling;
 
 import it.uniroma2.isw2.model.BuggyClassReleaseLabel;
 import it.uniroma2.isw2.model.Release;
+import it.uniroma2.isw2.model.ReleaseJavaClass;
 import it.uniroma2.isw2.model.TicketBuggyClass;
 import it.uniroma2.isw2.model.TicketComputedAv;
 
@@ -20,9 +21,12 @@ public class BuggyClassReleaseLabeler {
     public static List<BuggyClassReleaseLabel> buildPositiveLabels(String projectName,
                                                                    List<TicketComputedAv> ticketsWithComputedAv,
                                                                    List<Release> selectedReleases,
-                                                                   List<TicketBuggyClass> ticketBuggyClasses) {
+                                                                   List<TicketBuggyClass> ticketBuggyClasses,
+                                                                   List<ReleaseJavaClass> releaseJavaClasses) {
         List<BuggyClassReleaseLabel> result = new ArrayList<>();
+
         Map<String, String> computedAvByTicketId = buildComputedAvMap(ticketsWithComputedAv);
+        Set<String> existingClassReleaseKeys = buildExistingClassReleaseKeys(releaseJavaClasses);
         Set<String> seen = new HashSet<>();
 
         for (TicketBuggyClass ticketBuggyClass : ticketBuggyClasses) {
@@ -33,24 +37,34 @@ public class BuggyClassReleaseLabeler {
             }
 
             Set<String> affectedReleaseNames = parseComputedAv(computedAv);
+            String normalizedClassPath = normalizePath(ticketBuggyClass.getClassPath());
 
             for (Release release : selectedReleases) {
                 if (!affectedReleaseNames.contains(release.getVersionName())) {
                     continue;
                 }
 
-                String key = ticketBuggyClass.getTicketId()
-                        + "|"
-                        + ticketBuggyClass.getClassPath()
-                        + "|"
-                        + release.getVersionName();
+                /*
+                 * Mantieni il positivo solo se la classe esiste davvero
+                 * nello snapshot della release.
+                 */
+                String existingKey = buildClassReleaseKey(normalizedClassPath, release.getVersionId());
+                if (!existingClassReleaseKeys.contains(existingKey)) {
+                    continue;
+                }
 
-                if (seen.add(key)) {
+                String dedupeKey = ticketBuggyClass.getTicketId()
+                        + "|"
+                        + normalizedClassPath
+                        + "|"
+                        + release.getVersionId();
+
+                if (seen.add(dedupeKey)) {
                     result.add(new BuggyClassReleaseLabel(
                             projectName,
                             ticketBuggyClass.getTicketId(),
                             ticketBuggyClass.getFixCommitHash(),
-                            ticketBuggyClass.getClassPath(),
+                            normalizedClassPath,
                             release.getVersionId(),
                             release.getVersionName(),
                             release.getIndex(),
@@ -73,6 +87,19 @@ public class BuggyClassReleaseLabeler {
         return map;
     }
 
+    private static Set<String> buildExistingClassReleaseKeys(List<ReleaseJavaClass> releaseJavaClasses) {
+        Set<String> keys = new HashSet<>();
+
+        for (ReleaseJavaClass releaseJavaClass : releaseJavaClasses) {
+            keys.add(buildClassReleaseKey(
+                    normalizePath(releaseJavaClass.getClassPath()),
+                    releaseJavaClass.getReleaseId()
+            ));
+        }
+
+        return keys;
+    }
+
     private static Set<String> parseComputedAv(String computedAv) {
         Set<String> releaseNames = new HashSet<>();
 
@@ -85,5 +112,13 @@ public class BuggyClassReleaseLabeler {
         }
 
         return releaseNames;
+    }
+
+    private static String buildClassReleaseKey(String classPath, String releaseId) {
+        return classPath + "|" + releaseId;
+    }
+
+    private static String normalizePath(String path) {
+        return path.replace("\\", "/").trim();
     }
 }
