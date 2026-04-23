@@ -6,11 +6,9 @@ import it.uniroma2.isw2.model.*;
 import it.uniroma2.isw2.proportion.*;
 import it.uniroma2.isw2.selector.ReleaseSelector;
 
-
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;
-
 
 /**
  * Classe principale del progetto.
@@ -23,11 +21,8 @@ public class Main {
     private static final String TICKETS_FILE = PROJECT_NAME + "Tickets.csv";
     private static final double RELEASES_TO_KEEP = 0.34;
 
-
-
     private static final String FINAL_CLASS_RELEASE_LABELS_FILE =
             PROJECT_NAME + "_FinalClassReleaseLabels.csv";
-
 
     private static final String PROJECT_REPO_PATH =
             "C:\\Users\\edoar\\OneDrive\\Desktop\\ISW2\\openjpa";
@@ -41,15 +36,12 @@ public class Main {
     public static void main(String[] args) throws IOException {
         System.out.println("Avvio costruzione dataset del progetto " + PROJECT_NAME + ".");
 
-        List<EnhancedTicket> estimatedTickets = null;
-        List<Release> selectedReleases = null;
-        List<Release> allReleases = null;
         try {
             /*
              * STEP 1:
              * Lettura di tutte le release del progetto.
              */
-            allReleases = ReleaseCsvReader.loadReleases(RELEASES_FILE);
+            List<Release> allReleases = ReleaseCsvReader.loadReleases(RELEASES_FILE);
             System.out.println("Release lette: " + allReleases.size());
 
             /*
@@ -57,7 +49,8 @@ public class Main {
              * Selezione del primo 34% delle release
              * (equivalente a ignorare l'ultimo 66%).
              */
-            selectedReleases = ReleaseSelector.selectInitialReleases(allReleases, RELEASES_TO_KEEP);
+            List<Release> selectedReleases =
+                    ReleaseSelector.selectInitialReleases(allReleases, RELEASES_TO_KEEP);
             System.out.println("Release selezionate per il dataset finale: " + selectedReleases.size());
 
             /*
@@ -66,7 +59,6 @@ public class Main {
              */
             List<Ticket> tickets = TicketCsvReader.loadTickets(TICKETS_FILE);
             System.out.println("Ticket letti: " + tickets.size());
-
 
             /*
              * STEP 3:
@@ -97,8 +89,10 @@ public class Main {
              * STEP 6:
              * Stima della IV per i ticket che ancora non la possiedono.
              */
-            estimatedTickets =  ProportionService.estimateMissingInjectedVersions(
-                    avBasedTickets, allReleases, proportion);
+            List<EnhancedTicket> estimatedTickets =
+                    ProportionService.estimateMissingInjectedVersions(
+                            avBasedTickets, allReleases, proportion
+                    );
             System.out.println("ticket con IV stimata creato");
 
             System.out.println("Selezione release + fase AV -> IV -> P completate con successo.");
@@ -117,7 +111,10 @@ public class Main {
              * Ricerca dei fix commit associati ai ticket nel repository Git.
              */
             List<TicketFixCommit> ticketFixCommits =
-                    FixCommitFinder.findFixCommits(estimatedTickets, PROJECT_REPO_PATH);
+                    BuggyClassService.findFixCommits(
+                            estimatedTickets,
+                            PROJECT_REPO_PATH
+                    );
             TicketFixCommitCsvWriter.writeTicketFixCommits(TICKET_FIX_COMMITS_FILE, ticketFixCommits);
             System.out.println("File ticket-fix commit creato: " + TICKET_FIX_COMMITS_FILE);
 
@@ -127,7 +124,7 @@ public class Main {
              * Sono considerate solo classi Java di produzione.
              */
             List<TicketBuggyClass> ticketBuggyClasses =
-                    SimplifiedSzzBuggyClassExtractor.extractBuggyClasses(
+                    BuggyClassService.extractBuggyClasses(
                             ticketFixCommits,
                             PROJECT_REPO_PATH
                     );
@@ -138,61 +135,37 @@ public class Main {
             System.out.println("File ticket-buggy classes creato: " + TICKET_BUGGY_CLASSES_FILE);
 
             /*
-             * STEP 10:
-             * Per ogni release selezionata si trova il commit snapshot,
-             * cioè l'ultimo commit disponibile prima o alla data della release.
-             */
-            List<ReleaseSnapshot> releaseSnapshots =
-                    GitReleaseSnapshotFinder.findSnapshots(
-                            selectedReleases,
-                            PROJECT_REPO_PATH
-                    );
-            System.out.println("Snapshot di release trovati: " + releaseSnapshots.size());
-
-            /*
-             * STEP 11:
-             * Per ogni snapshot si estraggono tutte le classi Java di produzione presenti.
+             * STEP 10-11:
+             * Per ogni release selezionata:
+             * - trova il commit snapshot
+             * - estrae tutte le classi Java di produzione presenti
              */
             List<ReleaseJavaClass> releaseJavaClasses =
-                    GitJavaClassInventoryBuilder.buildInventory(
+                    ReleaseInventoryService.buildReleaseInventory(
                             PROJECT_NAME,
-                            releaseSnapshots,
+                            selectedReleases,
                             PROJECT_REPO_PATH
                     );
             System.out.println("Coppie classe-release generate: " + releaseJavaClasses.size());
 
             /*
-             * STEP 12:
-             * Costruzione dei positivi, filtrati sulle classi che esistono davvero
-             * nello snapshot della release.
-             */
-            List<BuggyClassReleaseLabel> buggyClassReleaseLabels =
-                    BuggyClassReleaseLabeler.buildPositiveLabels(
-                            PROJECT_NAME,
-                            computedAvByTicketId,
-                            selectedReleases,
-                            ticketBuggyClasses,
-                            releaseJavaClasses
-                    );
-            System.out.println("labeling positivo classe-release fatto");
-
-            /*
-             * STEP 13:
-             * Merge finale yes/no.
+             * STEP 12-13:
+             * Costruzione dei positivi e merge finale yes/no
+             * direttamente dentro FinalDatasetCsvWriter.
              */
             FinalDatasetCsvWriter.writeFinalDataset(
                     FINAL_CLASS_RELEASE_LABELS_FILE,
                     releaseJavaClasses,
-                    buggyClassReleaseLabels
+                    selectedReleases,
+                    computedAvByTicketId,
+                    ticketBuggyClasses
             );
             System.out.println("File finale classe-release yes/no creato: "
                     + FINAL_CLASS_RELEASE_LABELS_FILE);
-
 
         } catch (IOException e) {
             System.out.println("Errore durante l'esecuzione del flusso principale.");
             e.printStackTrace();
         }
-
     }
 }
