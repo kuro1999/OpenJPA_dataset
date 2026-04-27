@@ -324,7 +324,16 @@ public class BuggyClassService {
     private static boolean isProductionJavaClass(String path) {
         return path.endsWith(".java")
                 && path.contains("/src/main/java/")
-                && !path.contains("/src/test/java/");
+                && !path.contains("/src/test/java")
+                && !path.contains("/src/it/")
+                && !path.contains("/testDependencies/")
+                && !path.contains("/test-dependencies/")
+                && !path.contains("/testFixtures/")
+                && !path.contains("/test-fixtures/")
+                && !path.contains("examples/src")
+                && !path.contains("junit5/")
+                && !path.contains("kubernetes/")
+                && !path.contains("/osgi");
     }
 
     private static String normalizePath(String path) {
