@@ -1,0 +1,5 @@
+Dataset,Rows,RowsWithNSMELLSGreaterThanZero,RowsWithNSMELLSEqualToZero,BuggyYes,BuggyNo
+A_original,15218,12106,3112,2874,12344
+B_plus_smelly,12106,12106,0,2557,9549
+B_synthetic_zero_smells,12106,0,12106,2557,9549
+C_no_smells,3112,0,3112,317,2795
