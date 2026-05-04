@@ -25,9 +25,6 @@ import java.util.Map;
 public class FinalDatasetMerger {
 
     private static final List<String> OUTPUT_HEADERS = Arrays.asList(
-            "Project",
-            "ReleaseID",
-            "ReleaseName",
             "ReleaseIndex",
             "ClassPath",
 
@@ -125,9 +122,7 @@ public class FinalDatasetMerger {
 
                 List<String> outputValues = new ArrayList<>();
 
-                outputValues.add(labelRow.get("Project"));
-                outputValues.add(labelRow.get("ReleaseID"));
-                outputValues.add(labelRow.get("ReleaseName"));
+
                 outputValues.add(labelRow.get("ReleaseIndex"));
                 outputValues.add(labelRow.get("ClassPath"));
 
