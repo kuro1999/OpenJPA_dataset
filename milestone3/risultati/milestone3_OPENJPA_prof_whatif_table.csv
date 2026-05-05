@@ -1,0 +1,10 @@
+Dataset A,Dataset A,Dataset B+,Dataset B+,Dataset B,Dataset C,Dataset C
+A,E,A,E,E,A,E
+2874,2905,2557,2586,2576,317,319
+
+Drop on smelly subset,,,B+_E - B_E,,,
+10,,,2586 - 2576,,,
+Reduction on smelly subset,,,(B+_E - B_E) / B+_E,,,
+0.003867,,,(2586 - 2576) / 2586,,,
+Overall reduction,,,(B+_E - B_E) / A_E,,,
+0.003442,,,(2586 - 2576) / 2905,,,

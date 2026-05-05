@@ -1,0 +1,13 @@
+Metric,Value,Formula
+BestClassifier,RandomForest + ClassBalancer,
+FeatureSelection,No,
+Balancing,Yes,
+PredictedBuggy_A,2905,
+PredictedBuggy_Bplus,2586,
+PredictedBuggy_B,2576,
+PredictedBuggy_C,319,
+PreventedBuggy_total,10,PredictedBuggy_Bplus - PredictedBuggy_B
+Prevented_over_total_predicted_buggy,0.003442,PreventedBuggy_total / PredictedBuggy_A
+Prevented_over_total_predicted_buggy_percent,0.34%,PreventedBuggy_total / PredictedBuggy_A * 100
+Prevented_out_of_preventable,0.003867,PreventedBuggy_total / PredictedBuggy_Bplus
+Prevented_out_of_preventable_percent,0.39%,PreventedBuggy_total / PredictedBuggy_Bplus * 100

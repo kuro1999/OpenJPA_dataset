@@ -1,0 +1,5 @@
+Project,Dataset,Description,Rows,Actual_No,Actual_Yes,TN_actual_no_pred_no,FP_actual_no_pred_yes,FN_actual_yes_pred_no,TP_actual_yes_pred_yes,Predicted_No,Predicted_Yes,Correct,Incorrect,Accuracy,Kappa,Precision_Yes,Recall_Yes,ROC_Area_Yes,PreventedBuggy_vs_B
+OPENJPA,A,Original dataset,15218,12344,2874,12313,31,0,2874,12313,2905,15187,31,0.997963,0.9934,0.989,1.000,1.000,
+OPENJPA,B+,Portion of A with NSMELLS > 0,12106,9549,2557,9520,29,0,2557,9520,2586,12077,29,0.997604,0.9928,0.989,1.000,1.000,10
+OPENJPA,B,Synthetic B+ with NSMELLS = 0 and SMELL_DENSITY = 0,12106,9549,2557,9479,70,51,2506,9530,2576,11985,121,0.990005,0.9701,0.973,0.980,0.999,
+OPENJPA,C,Portion of A with NSMELLS = 0,3112,2795,317,2793,2,0,317,2793,319,3110,2,0.999357,0.9965,0.994,1.000,1.000,
