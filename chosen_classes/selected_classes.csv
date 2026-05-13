@@ -1,3 +1,3 @@
 Rank,Project,ReleaseId,ClassPath,NSmells,LOC,Methods,PublicMethods,IsInterface,IsEnum,IsAnnotation,IsAbstract,DiscardReasons
-1,OPENJPA,999,openjpa-kernel/src/main/java/org/apache/openjpa/kernel/BrokerImpl.java,428,4162,310,228,false,false,false,false,
-2,OPENJPA,999,openjpa-persistence/src/main/java/org/apache/openjpa/persistence/criteria/Joins.java,15,586,62,57,false,false,false,true,
+1,OPENJPA,999,openjpa-examples/openbooks/src/main/java/openbook/tools/parser/JavaParser.java,2178,15162,274,273,false,false,false,false,
+2,OPENJPA,999,openjpa-kernel/src/main/java/org/apache/openjpa/util/asm/AsmHelper.java,10,516,24,23,false,false,false,false,

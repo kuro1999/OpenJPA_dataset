@@ -68,10 +68,11 @@ public class ClassRankerBySmells {
             "C:\\Users\\edoar\\OneDrive\\Desktop\\ISW2\\isw2-dataset-openjpa\\chosen_classes"
     );
 
-    private static final int MIN_LOC = 300;
+    private static final int MIN_LOC = 500;
     private static final int MIN_METHODS = 15;
     private static final int MIN_PUBLIC_METHODS = 7;
     private static final int MIN_NSMELLS = 10;
+    private static final int MIN_BRANCHING_KEYWORDS = 15;
 
     private static final List<String> GUI_KEYWORDS = List.of(
             "gui", "ui", "view", "window", "panel", "button", "dialog", "frame",
@@ -82,11 +83,12 @@ public class ClassRankerBySmells {
     private static final List<String> SIMPLE_ROLE_KEYWORDS = List.of(
             "dto", "vo", "pojo", "bean", "model", "entity", "constant", "constants",
             "config", "configuration", "properties", "exception", "error",
-            "factory", "builder", "holder", "wrapper", "adapter", "request", "response" , "parser" ,
-            "abstract" , "interface" , "util" , "enum" , "xml" , "formatter" , "dictionary" , "demo" ,
-            "prepared"
+            "factory", "builder", "holder", "wrapper", "adapter", "request", "response",
+            "parser", "abstract", "interface", "util", "utils", "enum", "xml",
+            "formatter", "dictionary", "demo", "prepared", "resultset", "metadata",
+            "delegate", "delegating", "proxy", "handler", "listener", "visitor",
+            "descriptor", "definition", "info", "context"
     );
-
     private static final List<String> GENERATED_KEYWORDS = List.of(
             "generated", "target/generated", "build/generated", "protobuf",
             "grpc", "thrift", "avro", "openapi", "swagger"
@@ -300,10 +302,10 @@ public class ClassRankerBySmells {
                     continue;
                 }
 
-                String project = columns.get(0);
-                int releaseId = Integer.parseInt(columns.get(1));
-                String classPath = columns.get(2);
-                int nSmells = Integer.parseInt(columns.get(3));
+                String project = columns.get(0).trim();
+                int releaseId = Integer.parseInt(columns.get(1).trim());
+                String classPath = columns.get(2).trim();
+                int nSmells = Integer.parseInt(columns.get(3).trim());
 
                 Path absoluteClassPath = REPOSITORY_PATH.resolve(classPath).normalize();
 
@@ -317,6 +319,7 @@ public class ClassRankerBySmells {
                         metrics.loc(),
                         metrics.methods(),
                         metrics.publicMethods(),
+                        metrics.branchingKeywords(),
                         metrics.isInterface(),
                         metrics.isEnum(),
                         metrics.isAnnotation(),
@@ -330,13 +333,15 @@ public class ClassRankerBySmells {
 
     private static SourceMetrics analyzeSourceFile(Path sourcePath) {
         if (!Files.exists(sourcePath)) {
-            return new SourceMetrics(0, 0, 0, false, false, false, false);
+            return new SourceMetrics(0, 0, 0, 0, false, false, false, false);
         }
 
         try {
             String code = Files.readString(sourcePath, StandardCharsets.UTF_8);
             String codeWithoutComments = removeCommentsSafely(code);
+
             int loc = countLoc(codeWithoutComments);
+            int branchingKeywords = countBranchingKeywords(code);
 
             CompilationUnit compilationUnit = StaticJavaParser.parse(code);
 
@@ -406,6 +411,7 @@ public class ClassRankerBySmells {
                     loc,
                     methods,
                     publicMethods,
+                    branchingKeywords,
                     isInterface,
                     isEnum,
                     isAnnotation,
@@ -421,6 +427,7 @@ public class ClassRankerBySmells {
                         countLoc(codeWithoutComments),
                         countMethodsLineBased(code),
                         countPublicMethodsLineBased(code),
+                        countBranchingKeywords(code),
                         false,
                         false,
                         false,
@@ -428,9 +435,37 @@ public class ClassRankerBySmells {
                 );
 
             } catch (IOException ioException) {
-                return new SourceMetrics(0, 0, 0, false, false, false, false);
+                return new SourceMetrics(0, 0, 0, 0, false, false, false, false);
             }
         }
+    }
+
+    private static int countBranchingKeywords(String code) {
+        int count = 0;
+
+        String codeWithoutComments = removeCommentsSafely(code);
+
+        for (String line : codeWithoutComments.split("\\R")) {
+            String trimmed = line.trim();
+
+            if (trimmed.startsWith("if ")
+                    || trimmed.startsWith("if(")
+                    || trimmed.startsWith("else if ")
+                    || trimmed.startsWith("for ")
+                    || trimmed.startsWith("for(")
+                    || trimmed.startsWith("while ")
+                    || trimmed.startsWith("while(")
+                    || trimmed.startsWith("switch ")
+                    || trimmed.startsWith("switch(")
+                    || trimmed.startsWith("case ")
+                    || trimmed.startsWith("catch ")
+                    || trimmed.startsWith("catch(")
+                    || trimmed.contains(" ? ")) {
+                count++;
+            }
+        }
+
+        return count;
     }
 
     private static void applyFilters(ClassCandidate candidate) {
@@ -450,6 +485,10 @@ public class ClassRankerBySmells {
             candidate.discardReasons.add("LOW_LOC<" + MIN_LOC);
         }
 
+        if (candidate.branchingKeywords() < MIN_BRANCHING_KEYWORDS) {
+            candidate.discardReasons.add("LOW_BRANCHING<" + MIN_BRANCHING_KEYWORDS);
+        }
+
         if (candidate.methods() < MIN_METHODS) {
             candidate.discardReasons.add("FEW_METHODS<" + MIN_METHODS);
         }
@@ -460,6 +499,10 @@ public class ClassRankerBySmells {
 
         if (candidate.isInterface()) {
             candidate.discardReasons.add("INTERFACE");
+        }
+
+        if (candidate.isAbstract()) {
+            candidate.discardReasons.add("ABSTRACT_CLASS");
         }
 
         if (candidate.isEnum()) {
@@ -827,6 +870,7 @@ public class ClassRankerBySmells {
             int loc,
             int methods,
             int publicMethods,
+            int branchingKeywords,
             boolean isInterface,
             boolean isEnum,
             boolean isAnnotation,
@@ -847,6 +891,7 @@ public class ClassRankerBySmells {
         private final boolean isEnum;
         private final boolean isAnnotation;
         private final boolean isAbstract;
+        private final int branchingKeywords;
 
         private final List<String> discardReasons = new ArrayList<>();
 
@@ -858,6 +903,7 @@ public class ClassRankerBySmells {
                 int loc,
                 int methods,
                 int publicMethods,
+                int branchingKeywords,
                 boolean isInterface,
                 boolean isEnum,
                 boolean isAnnotation,
@@ -870,10 +916,15 @@ public class ClassRankerBySmells {
             this.loc = loc;
             this.methods = methods;
             this.publicMethods = publicMethods;
+            this.branchingKeywords = branchingKeywords;
             this.isInterface = isInterface;
             this.isEnum = isEnum;
             this.isAnnotation = isAnnotation;
             this.isAbstract = isAbstract;
+        }
+
+        private int branchingKeywords() {
+            return branchingKeywords;
         }
 
         private String project() {
