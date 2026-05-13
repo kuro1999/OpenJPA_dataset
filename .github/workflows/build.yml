@@ -2,7 +2,7 @@ name: SonarQube
 on:
   push:
     branches:
-      - main
+      - main #cambiato da master a main su sonar
   pull_request:
     types: [opened, synchronize, reopened]
 jobs:
