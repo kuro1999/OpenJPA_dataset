@@ -68,10 +68,16 @@ public class ClassRankerBySmells {
             "C:\\Users\\edoar\\OneDrive\\Desktop\\ISW2\\isw2-dataset-openjpa\\chosen_classes"
     );
 
-    private static final int MIN_LOC = 500;
-    private static final int MIN_METHODS = 15;
-    private static final int MIN_PUBLIC_METHODS = 7;
-    private static final int MIN_NSMELLS = 10;
+    private static final int MIN_LOC = 300;
+    private static final int MAX_LOC = 2500;
+
+    private static final int MIN_METHODS = 10;
+    private static final int MAX_METHODS = 90;
+
+    private static final int MIN_PUBLIC_METHODS = 5;
+    private static final int MAX_PUBLIC_METHODS = 40;
+
+    private static final int MIN_NSMELLS = 5;
     private static final int MIN_BRANCHING_KEYWORDS = 15;
 
     private static final List<String> GUI_KEYWORDS = List.of(
@@ -82,16 +88,15 @@ public class ClassRankerBySmells {
 
     private static final List<String> SIMPLE_ROLE_KEYWORDS = List.of(
             "dto", "vo", "pojo", "bean", "model", "entity", "constant", "constants",
-            "config", "configuration", "properties", "exception", "error",
-            "factory", "builder", "holder", "wrapper", "adapter", "request", "response",
-            "parser", "abstract", "interface", "util", "utils", "enum", "xml",
-            "formatter", "dictionary", "demo", "prepared", "resultset", "metadata",
-            "delegate", "delegating", "proxy", "handler", "listener", "visitor",
-            "descriptor", "definition", "info", "context"
+            "exception", "error", "abstract", "interface", "enum",
+            "xml", "formatter", "dictionary", "demo", "prepared",
+            "resultset", "descriptor", "definition", "info" , "parser" , "query" ,
+            "decorator" , "asm" , "hashset"
     );
+
     private static final List<String> GENERATED_KEYWORDS = List.of(
             "generated", "target/generated", "build/generated", "protobuf",
-            "grpc", "thrift", "avro", "openapi", "swagger"
+            "grpc", "thrift", "avro", "openapi", "swagger" , "generator"
     );
 
     private ClassRankerBySmells() {
@@ -485,6 +490,18 @@ public class ClassRankerBySmells {
             candidate.discardReasons.add("LOW_LOC<" + MIN_LOC);
         }
 
+        if (candidate.loc() > MAX_LOC) {
+            candidate.discardReasons.add("TOO_LARGE_LOC>" + MAX_LOC);
+        }
+
+        if (candidate.methods() > MAX_METHODS) {
+            candidate.discardReasons.add("TOO_MANY_METHODS>" + MAX_METHODS);
+        }
+
+        if (candidate.publicMethods() > MAX_PUBLIC_METHODS) {
+            candidate.discardReasons.add("TOO_MANY_PUBLIC_METHODS>" + MAX_PUBLIC_METHODS);
+        }
+
         if (candidate.branchingKeywords() < MIN_BRANCHING_KEYWORDS) {
             candidate.discardReasons.add("LOW_BRANCHING<" + MIN_BRANCHING_KEYWORDS);
         }
@@ -572,6 +589,7 @@ public class ClassRankerBySmells {
                     "ClassPath",
                     "NSmells",
                     "LOC",
+                    "BranchingKeywords",
                     "Methods",
                     "PublicMethods",
                     "IsInterface",
@@ -596,6 +614,8 @@ public class ClassRankerBySmells {
                 writer.write(csv(row.nSmells()));
                 writer.write(",");
                 writer.write(csv(row.loc()));
+                writer.write(",");
+                writer.write(csv(row.branchingKeywords()));
                 writer.write(",");
                 writer.write(csv(row.methods()));
                 writer.write(",");
