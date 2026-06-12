@@ -14,6 +14,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 /**
  * Classe principale del progetto.
@@ -21,7 +23,7 @@ import java.util.Map;
  */
 public class Main {
 
-
+    private static final Logger LOGGER = Logger.getLogger(Main.class.getName());
 
     private static final String PROJECT_NAME = "OPENJPA";
     private static final String RELEASES_FILE = PROJECT_NAME + "VersionInfo.csv";
@@ -34,250 +36,269 @@ public class Main {
     private static final String FINAL_CLASS_RELEASE_LABELS_FILE =
             PROJECT_NAME + "_FinalClassReleaseLabels.csv";
 
-    private static final String PROJECT_REPO_PATH =
-            "C:\\Users\\edoar\\OneDrive\\Desktop\\ISW2\\openjpa";
-
-    private static final String CLASS_RELEASE_SMELLS_FILE =
-            "C:\\Users\\edoar\\OneDrive\\Desktop\\ISW2\\isw2-dataset-openjpa\\output\\smells\\"
-                    + PROJECT_NAME + "_ClassReleaseSmells.csv";
-
     private static final String TICKET_FIX_COMMITS_FILE =
             PROJECT_NAME + "_TicketFixCommits.csv";
 
     private static final String TICKET_BUGGY_CLASSES_FILE =
             PROJECT_NAME + "_TicketBuggyClasses.csv";
 
-
     private static final String FINAL_DATASET_FILE =
             "dataset_" + PROJECT_NAME + ".csv";
 
-    public static void main(String[] args) throws IOException {
-        System.out.println("Avvio costruzione dataset del progetto " + PROJECT_NAME + ".");
+    private static final String REPOSITORY_PATH_PROPERTY = "isw2.repository.path";
+    private static final String REPOSITORY_PATH_ENV = "ISW2_REPOSITORY_PATH";
 
+    private static final String SMELLS_FILE_PROPERTY = "isw2.smells.file";
+    private static final String SMELLS_FILE_ENV = "ISW2_SMELLS_FILE";
+
+    private static final Path DEFAULT_REPOSITORY_PATH = Path.of("openjpa");
+
+    private static final Path DEFAULT_CLASS_RELEASE_SMELLS_FILE = Path.of(
+            "output",
+            "smells",
+            PROJECT_NAME + "_ClassReleaseSmells.csv"
+    );
+
+    private Main() {
+        // Utility class.
+    }
+
+    public static void main(String[] args) {
+        Path projectRepoPath = resolveRepositoryPath(args);
+        Path classReleaseSmellsFile = resolveClassReleaseSmellsFile(args);
 
         try {
+            LOGGER.info(() -> "Avvio costruzione dataset del progetto " + PROJECT_NAME + ".");
 
-            /*
-             * STEP 1:
-             * Lettura di tutte le release del progetto.
-             */
             List<Release> allReleases = ReleaseCsvReader.loadReleases(RELEASES_FILE);
-            System.out.println("Release lette: " + allReleases.size());
+            LOGGER.info(() -> "Release lette: " + allReleases.size());
 
-            /*
-             * STEP 1.1:
-             * Selezione del primo 34% delle release
-             * (equivalente a ignorare l'ultimo 66%).
-             */
             List<Release> selectedReleases =
                     ReleaseSelector.selectInitialReleases(allReleases, RELEASES_TO_KEEP);
-            System.out.println("Release selezionate per il dataset finale: " + selectedReleases.size());
+            LOGGER.info(() -> "Release selezionate per il dataset finale: " + selectedReleases.size());
 
-            /*
-             * STEP 2:
-             * Lettura dei ticket validi.
-             */
             List<Ticket> tickets = TicketCsvReader.loadTickets(TICKETS_FILE);
-            System.out.println("Ticket letti: " + tickets.size());
+            LOGGER.info(() -> "Ticket letti: " + tickets.size());
 
-            /*
-             * STEP 3:
-             * Arricchimento dei ticket con OV e FV.
-             * QUI continuiamo a usare tutte le release, non solo quelle selezionate.
-             */
             List<EnhancedTicket> enhancedTickets =
                     TicketVersionEnricher.enrichTickets(tickets, allReleases);
-            System.out.println("ticket arricchiti creati");
+            LOGGER.info("Ticket arricchiti creati.");
 
-            /*
-             * STEP 4:
-             * Per i ticket con AV, si assegna una IV iniziale.
-             */
             List<EnhancedTicket> avBasedTickets =
                     AffectedVersionIVResolver.assignInitialIVFromAV(enhancedTickets, allReleases);
-            System.out.println("ticket con IV iniziale da AV creati");
+            LOGGER.info("Ticket con IV iniziale da AV creati.");
 
-            /*
-             * STEP 5:
-             * Calcolo della proportion media.
-             */
             double proportion =
                     ProportionService.calculateAverageProportion(avBasedTickets, allReleases);
-            System.out.println("Proportion media calcolata: " + proportion);
+            LOGGER.info(() -> "Proportion media calcolata: " + proportion);
 
-            /*
-             * STEP 6:
-             * Stima della IV per i ticket che ancora non la possiedono.
-             */
             List<EnhancedTicket> estimatedTickets =
                     ProportionService.estimateMissingInjectedVersions(
-                            avBasedTickets, allReleases, proportion
+                            avBasedTickets,
+                            allReleases,
+                            proportion
                     );
-            System.out.println("ticket con IV stimata creato");
+            LOGGER.info("Ticket con IV stimata creati.");
 
-            System.out.println("Selezione release + fase AV -> IV -> P completate con successo.");
+            LOGGER.info("Selezione release + fase AV -> IV -> P completate con successo.");
 
-            /*
-             * STEP 7:
-             * Costruzione in memoria della ComputedAV per ogni ticket stimato.
-             * Nessun passaggio intermedio su CSV.
-             */
             Map<String, String> computedAvByTicketId =
                     ProportionService.buildComputedAvMap(estimatedTickets, allReleases);
-            System.out.println("Ticket con ComputedAV costruiti in memoria: " + computedAvByTicketId.size());
+            LOGGER.info(() -> "Ticket con ComputedAV costruiti in memoria: "
+                    + computedAvByTicketId.size());
+
             if (!csvExists(FINAL_CLASS_RELEASE_LABELS_FILE)) {
-
-
-
-                /*
-                 * STEP 8:
-                 * Ricerca dei fix commit associati ai ticket nel repository Git.
-                 */
-                List<TicketFixCommit> ticketFixCommits =
-                        BuggyClassService.findFixCommits(
-                                estimatedTickets,
-                                PROJECT_REPO_PATH
-                        );
-                TicketFixCommitCsvWriter.writeTicketFixCommits(TICKET_FIX_COMMITS_FILE, ticketFixCommits);
-                System.out.println("File ticket-fix commit creato: " + TICKET_FIX_COMMITS_FILE);
-
-                /*
-                 * STEP 9:
-                 * Estrazione semplificata delle buggy classes con SZZ.
-                 * Sono considerate solo classi Java di produzione.
-                 */
-                List<TicketBuggyClass> ticketBuggyClasses =
-                        BuggyClassService.extractBuggyClasses(
-                                ticketFixCommits,
-                                PROJECT_REPO_PATH
-                        );
-                TicketBuggyClassCsvWriter.writeTicketBuggyClasses(
-                        TICKET_BUGGY_CLASSES_FILE,
-                        ticketBuggyClasses
-                );
-                System.out.println("File ticket-buggy classes creato: " + TICKET_BUGGY_CLASSES_FILE);
-
-                /*
-                 * STEP 10-11:
-                 * Per ogni release selezionata:
-                 * - trova il commit snapshot
-                 * - estrae tutte le classi Java di produzione presenti
-                 */
-                List<ReleaseJavaClass> releaseJavaClasses =
-                        ReleaseInventoryService.buildReleaseInventory(
-                                PROJECT_NAME,
-                                selectedReleases,
-                                PROJECT_REPO_PATH
-                        );
-                System.out.println("Coppie classe-release generate: " + releaseJavaClasses.size());
-
-                /*
-                 * STEP 12-13:
-                 * Costruzione dei positivi e merge finale yes/no
-                 * direttamente dentro FinalDatasetCsvWriter.
-                 */
-                FinalDatasetCsvWriter.writeFinalDataset(
-                        FINAL_CLASS_RELEASE_LABELS_FILE,
-                        releaseJavaClasses,
+                buildClassReleaseLabels(
+                        estimatedTickets,
                         selectedReleases,
                         computedAvByTicketId,
-                        ticketBuggyClasses
+                        projectRepoPath
                 );
-                System.out.println("File finale classe-release yes/no creato: "
-                        + FINAL_CLASS_RELEASE_LABELS_FILE);
             }
-            /*
-             * STEP 10-11:
-             * Per ogni release selezionata:
-             * - trova il commit snapshot
-             * - estrae tutte le classi Java di produzione presenti
-             */
+
             List<ReleaseJavaClass> releaseJavaClasses =
                     ReleaseInventoryService.buildReleaseInventory(
                             PROJECT_NAME,
                             selectedReleases,
-                            PROJECT_REPO_PATH
+                            projectRepoPath.toString()
                     );
-            System.out.println("Coppie classe-release generate: " + releaseJavaClasses.size());
+            LOGGER.info(() -> "Coppie classe-release generate: " + releaseJavaClasses.size());
 
-            System.out.println("File finale delle metriche presente: " + FINAL_CLASS_RELEASE_LABELS_FILE);
+            LOGGER.info(() -> "File finale delle label presente: " + FINAL_CLASS_RELEASE_LABELS_FILE);
 
-            /*
-             * STEP 16:
-             * Calcolo delle metriche classe-release.
-             * Se il file delle metriche esiste già, il calcolo viene saltato.
-             */
-            if (!csvExists(CLASS_RELEASE_METRICS_FILE)) {
-                MetricService metricService =
-                        new MetricService(
-                                PROJECT_NAME,
-                                Path.of(PROJECT_REPO_PATH),
-                                Path.of(TICKET_FIX_COMMITS_FILE)
-                        );
+            computeMetricsIfNeeded(
+                    selectedReleases,
+                    releaseJavaClasses,
+                    projectRepoPath
+            );
 
-                List<ClassReleaseMetric> classReleaseMetrics =
-                        metricService.computeMetrics(
-                                selectedReleases,
-                                releaseJavaClasses
-                        );
+            LOGGER.info(() -> "Working directory: " + Path.of("").toAbsolutePath());
 
-                ClassReleaseMetricCsvWriter.writeClassReleaseMetrics(
-                        CLASS_RELEASE_METRICS_FILE,
-                        classReleaseMetrics
-                );
-
-                System.out.println("File metriche classe-release creato: "
-                        + CLASS_RELEASE_METRICS_FILE);
-            } else {
-                System.out.println("File metriche classe-release già presente: "
-                        + CLASS_RELEASE_METRICS_FILE);
-                System.out.println("Calcolo metriche saltato.");
-            }
-
-            System.out.println("Working directory: " + Path.of("").toAbsolutePath());
-
-            if (!csvExists(CLASS_RELEASE_METRICS_FILE)) {
-                System.out.println("File metriche mancante: "
-                        + Path.of(CLASS_RELEASE_METRICS_FILE).toAbsolutePath());
+            if (!requiredCsvFilesExist(classReleaseSmellsFile)) {
                 return;
             }
 
-            if (!csvExists(FINAL_CLASS_RELEASE_LABELS_FILE)) {
-                System.out.println("File label mancante: "
-                        + Path.of(FINAL_CLASS_RELEASE_LABELS_FILE).toAbsolutePath());
-                return;
-            }
-
-            if (!csvExists(CLASS_RELEASE_SMELLS_FILE)) {
-                System.out.println("File smell mancante: "
-                        + Path.of(CLASS_RELEASE_SMELLS_FILE).toAbsolutePath());
-                System.out.println("Controlla che il file si chiami esattamente: "
-                        + CLASS_RELEASE_SMELLS_FILE);
-                return;
-            }
-            /*
-             * STEP 17:
-             * Merge finale tra:
-             * - label classe-release;
-             * - metriche classe-release;
-             * - smell già calcolati separatamente.
-             *
-             * Viene prodotto il dataset finale completo.
-             */
             FinalDatasetMerger.buildFinalDataset(
                     CLASS_RELEASE_METRICS_FILE,
                     FINAL_CLASS_RELEASE_LABELS_FILE,
-                    CLASS_RELEASE_SMELLS_FILE,
+                    classReleaseSmellsFile.toString(),
                     FINAL_DATASET_FILE
             );
 
-            System.out.println("Dataset finale creato: " + FINAL_DATASET_FILE);
+            LOGGER.info(() -> "Dataset finale creato: " + FINAL_DATASET_FILE);
+
         } catch (IOException e) {
-            System.out.println("Errore durante l'esecuzione del flusso principale.");
-            e.printStackTrace();
+            LOGGER.log(Level.SEVERE, "Errore durante l'esecuzione del flusso principale.", e);
         }
     }
 
+    private static void buildClassReleaseLabels(List<EnhancedTicket> estimatedTickets,
+                                                List<Release> selectedReleases,
+                                                Map<String, String> computedAvByTicketId,
+                                                Path projectRepoPath) throws IOException {
+        List<TicketFixCommit> ticketFixCommits =
+                BuggyClassService.findFixCommits(
+                        estimatedTickets,
+                        projectRepoPath.toString()
+                );
+
+        TicketFixCommitCsvWriter.writeTicketFixCommits(
+                TICKET_FIX_COMMITS_FILE,
+                ticketFixCommits
+        );
+
+        LOGGER.info(() -> "File ticket-fix commit creato: " + TICKET_FIX_COMMITS_FILE);
+
+        List<TicketBuggyClass> ticketBuggyClasses =
+                BuggyClassService.extractBuggyClasses(
+                        ticketFixCommits,
+                        projectRepoPath.toString()
+                );
+
+        TicketBuggyClassCsvWriter.writeTicketBuggyClasses(
+                TICKET_BUGGY_CLASSES_FILE,
+                ticketBuggyClasses
+        );
+
+        LOGGER.info(() -> "File ticket-buggy classes creato: " + TICKET_BUGGY_CLASSES_FILE);
+
+        List<ReleaseJavaClass> releaseJavaClasses =
+                ReleaseInventoryService.buildReleaseInventory(
+                        PROJECT_NAME,
+                        selectedReleases,
+                        projectRepoPath.toString()
+                );
+
+        LOGGER.info(() -> "Coppie classe-release generate: " + releaseJavaClasses.size());
+
+        FinalDatasetCsvWriter.writeFinalDataset(
+                FINAL_CLASS_RELEASE_LABELS_FILE,
+                releaseJavaClasses,
+                selectedReleases,
+                computedAvByTicketId,
+                ticketBuggyClasses
+        );
+
+        LOGGER.info(() -> "File finale classe-release yes/no creato: "
+                + FINAL_CLASS_RELEASE_LABELS_FILE);
+    }
+
+    private static void computeMetricsIfNeeded(List<Release> selectedReleases,
+                                               List<ReleaseJavaClass> releaseJavaClasses,
+                                               Path projectRepoPath) throws IOException {
+        if (!csvExists(CLASS_RELEASE_METRICS_FILE)) {
+            MetricService metricService =
+                    new MetricService(
+                            PROJECT_NAME,
+                            projectRepoPath,
+                            Path.of(TICKET_FIX_COMMITS_FILE)
+                    );
+
+            List<ClassReleaseMetric> classReleaseMetrics =
+                    metricService.computeMetrics(
+                            selectedReleases,
+                            releaseJavaClasses
+                    );
+
+            ClassReleaseMetricCsvWriter.writeClassReleaseMetrics(
+                    CLASS_RELEASE_METRICS_FILE,
+                    classReleaseMetrics
+            );
+
+            LOGGER.info(() -> "File metriche classe-release creato: "
+                    + CLASS_RELEASE_METRICS_FILE);
+        } else {
+            LOGGER.info(() -> "File metriche classe-release già presente: "
+                    + CLASS_RELEASE_METRICS_FILE);
+            LOGGER.info("Calcolo metriche saltato.");
+        }
+    }
+
+    private static boolean requiredCsvFilesExist(Path classReleaseSmellsFile) throws IOException {
+        if (!csvExists(CLASS_RELEASE_METRICS_FILE)) {
+            LOGGER.warning(() -> "File metriche mancante: "
+                    + Path.of(CLASS_RELEASE_METRICS_FILE).toAbsolutePath());
+            return false;
+        }
+
+        if (!csvExists(FINAL_CLASS_RELEASE_LABELS_FILE)) {
+            LOGGER.warning(() -> "File label mancante: "
+                    + Path.of(FINAL_CLASS_RELEASE_LABELS_FILE).toAbsolutePath());
+            return false;
+        }
+
+        if (!csvExists(classReleaseSmellsFile.toString())) {
+            LOGGER.warning(() -> "File smell mancante: "
+                    + classReleaseSmellsFile.toAbsolutePath());
+            LOGGER.warning(() -> "Controlla che il file si chiami esattamente: "
+                    + classReleaseSmellsFile);
+            return false;
+        }
+
+        return true;
+    }
+
+    private static Path resolveRepositoryPath(String[] args) {
+        if (args.length > 0 && !args[0].isBlank()) {
+            return Path.of(args[0]);
+        }
+
+        return resolveConfiguredPath(
+                REPOSITORY_PATH_PROPERTY,
+                REPOSITORY_PATH_ENV,
+                DEFAULT_REPOSITORY_PATH
+        );
+    }
+
+    private static Path resolveClassReleaseSmellsFile(String[] args) {
+        if (args.length > 1 && !args[1].isBlank()) {
+            return Path.of(args[1]);
+        }
+
+        return resolveConfiguredPath(
+                SMELLS_FILE_PROPERTY,
+                SMELLS_FILE_ENV,
+                DEFAULT_CLASS_RELEASE_SMELLS_FILE
+        );
+    }
+
+    private static Path resolveConfiguredPath(String propertyName,
+                                              String environmentName,
+                                              Path defaultPath) {
+        String propertyValue = System.getProperty(propertyName);
+
+        if (propertyValue != null && !propertyValue.isBlank()) {
+            return Path.of(propertyValue);
+        }
+
+        String environmentValue = System.getenv(environmentName);
+
+        if (environmentValue != null && !environmentValue.isBlank()) {
+            return Path.of(environmentValue);
+        }
+
+        return defaultPath;
+    }
 
     private static boolean csvExists(String filePath) throws IOException {
         Path path = Path.of(filePath);

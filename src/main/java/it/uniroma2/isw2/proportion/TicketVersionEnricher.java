@@ -35,16 +35,16 @@ public class TicketVersionEnricher {
             String openingVersion = findOpeningVersion(ticket, releases);
             String fixedVersion = findFixedVersionFromResolutionDate(ticket, releases);
 
-            EnhancedTicket enhancedTicket = new EnhancedTicket(
-                    ticket.getTicketId(),
-                    ticket.getCreationDate(),
-                    ticket.getResolutionDate(),
-                    ticket.getAffectedVersions(),
-                    openingVersion,
-                    fixedVersion,
-                    "",
-                    "NONE"
-            );
+            EnhancedTicket enhancedTicket = EnhancedTicket.builder()
+                    .ticketId(ticket.getTicketId())
+                    .creationDate(ticket.getCreationDate())
+                    .resolutionDate(ticket.getResolutionDate())
+                    .affectedVersions(ticket.getAffectedVersions())
+                    .openingVersion(openingVersion)
+                    .fixedVersion(fixedVersion)
+                    .injectedVersion("")
+                    .injectedVersionSource("NONE")
+                    .build();
 
             enhancedTickets.add(enhancedTicket);
         }
@@ -69,11 +69,9 @@ public class TicketVersionEnricher {
              * OV = release più recente con data <= creationDate.
              * È la versione già disponibile quando il ticket viene aperto.
              */
-            if (!releaseDate.isAfter(creationDate)) {
-                if (bestRelease == null || releaseDate.isAfter(bestDate)) {
-                    bestRelease = release;
-                    bestDate = releaseDate;
-                }
+            if (!releaseDate.isAfter(creationDate) && (bestRelease == null || releaseDate.isAfter(bestDate))) {
+                bestRelease = release;
+                bestDate = releaseDate;
             }
         }
 
@@ -98,11 +96,9 @@ public class TicketVersionEnricher {
              * In questo progetto, resolutionDate è usata come proxy
              * della fix commit date.
              */
-            if (releaseDate.isAfter(resolutionDate)) {
-                if (bestRelease == null || releaseDate.isBefore(bestDate)) {
-                    bestRelease = release;
-                    bestDate = releaseDate;
-                }
+            if (releaseDate.isAfter(resolutionDate) && (bestRelease == null || releaseDate.isBefore(bestDate))) {
+                bestRelease = release;
+                bestDate = releaseDate;
             }
         }
 

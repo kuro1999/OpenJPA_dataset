@@ -22,6 +22,8 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 public class ClassRankerBySmells {
 
@@ -33,6 +35,8 @@ public class ClassRankerBySmells {
      * Il repository deve già essere posizionato sull'ultima release da analizzare.
      * Non viene fatto checkout e non viene applicato il filtro del 34%.
      */
+
+    private static final Logger LOGGER = Logger.getLogger(ClassRankerBySmells.class.getName());
 
     private static final String PROJECT_NAME = "OPENJPA";
 
@@ -90,13 +94,13 @@ public class ClassRankerBySmells {
             "dto", "vo", "pojo", "bean", "model", "entity", "constant", "constants",
             "exception", "error", "abstract", "interface", "enum",
             "xml", "formatter", "dictionary", "demo", "prepared",
-            "resultset", "descriptor", "definition", "info" , "parser" , "query" ,
-            "decorator" , "asm" , "hashset"
+            "resultset", "descriptor", "definition", "info", "parser", "query",
+            "decorator", "asm", "hashset"
     );
 
     private static final List<String> GENERATED_KEYWORDS = List.of(
             "generated", "target/generated", "build/generated", "protobuf",
-            "grpc", "thrift", "avro", "openapi", "swagger" , "generator"
+            "grpc", "thrift", "avro", "openapi", "swagger", "generator"
     );
 
     private ClassRankerBySmells() {
@@ -104,9 +108,9 @@ public class ClassRankerBySmells {
 
     public static void main(String[] args) {
         try {
-            System.out.println("Avvio ranking classi per smell.");
+            LOGGER.info("Avvio ranking classi per smell.");
             printFilterConfiguration();
-            System.out.println("Posizionamento repository sull'ultima release disponibile: " + REPOSITORY_PATH);
+            LOGGER.info(() -> "Posizionamento repository sull'ultima release disponibile: " + REPOSITORY_PATH);
 
             checkoutLatestRelease();
 
@@ -129,18 +133,8 @@ public class ClassRankerBySmells {
                 }
             }
 
-            accepted.sort(
-                    Comparator.comparingInt(ClassCandidate::nSmells).reversed()
-                            .thenComparing(Comparator.comparingInt(ClassCandidate::loc).reversed())
-                            .thenComparing(Comparator.comparingInt(ClassCandidate::methods).reversed())
-                            .thenComparing(ClassCandidate::classPath)
-            );
-
-            discarded.sort(
-                    Comparator.comparingInt(ClassCandidate::nSmells).reversed()
-                            .thenComparing(ClassCandidate::discardReasonsText)
-                            .thenComparing(ClassCandidate::classPath)
-            );
+            sortAcceptedCandidates(accepted);
+            sortDiscardedCandidates(discarded);
 
             List<ClassCandidate> selected = selectClassesByNameAlgorithm(accepted, FIRST_NAME);
 
@@ -150,25 +144,39 @@ public class ClassRankerBySmells {
 
             printSummary(candidates, accepted, discarded, selected);
 
-            System.out.println("Ranking completato.");
-            System.out.println("Output directory: " + OUTPUT_DIRECTORY);
-
-        } catch (IOException | InterruptedException e) {
-            System.err.println("Errore durante il ranking delle classi: " + e.getMessage());
-            e.printStackTrace();
-
-            if (e instanceof InterruptedException) {
-                Thread.currentThread().interrupt();
-            }
+            LOGGER.info("Ranking completato.");
+            LOGGER.info(() -> "Output directory: " + OUTPUT_DIRECTORY);
+        } catch (IOException e) {
+            LOGGER.log(Level.SEVERE, "Errore durante il ranking delle classi.", e);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            LOGGER.log(Level.SEVERE, "Ranking delle classi interrotto.", e);
         }
     }
 
+    private static void sortAcceptedCandidates(List<ClassCandidate> accepted) {
+        accepted.sort(
+                Comparator.comparingInt(ClassCandidate::nSmells).reversed()
+                        .thenComparing(Comparator.comparingInt(ClassCandidate::loc).reversed())
+                        .thenComparing(Comparator.comparingInt(ClassCandidate::methods).reversed())
+                        .thenComparing(ClassCandidate::classPath)
+        );
+    }
+
+    private static void sortDiscardedCandidates(List<ClassCandidate> discarded) {
+        discarded.sort(
+                Comparator.comparingInt(ClassCandidate::nSmells).reversed()
+                        .thenComparing(ClassCandidate::discardReasonsText)
+                        .thenComparing(ClassCandidate::classPath)
+        );
+    }
+
     private static void printFilterConfiguration() {
-        System.out.println("Filtri configurati:");
-        System.out.println("- MIN_LOC = " + MIN_LOC);
-        System.out.println("- MIN_METHODS = " + MIN_METHODS);
-        System.out.println("- MIN_PUBLIC_METHODS = " + MIN_PUBLIC_METHODS);
-        System.out.println("- MIN_NSMELLS = " + MIN_NSMELLS);
+        LOGGER.info("Filtri configurati:");
+        LOGGER.info(() -> "- MIN_LOC = " + MIN_LOC);
+        LOGGER.info(() -> "- MIN_METHODS = " + MIN_METHODS);
+        LOGGER.info(() -> "- MIN_PUBLIC_METHODS = " + MIN_PUBLIC_METHODS);
+        LOGGER.info(() -> "- MIN_NSMELLS = " + MIN_NSMELLS);
     }
 
     private static void checkoutLatestRelease() throws IOException, InterruptedException {
@@ -182,8 +190,8 @@ public class ClassRankerBySmells {
                 "HEAD"
         );
 
-        System.out.println("Checkout effettuato sulla release: " + latestTag);
-        System.out.println("Commit corrente: " + currentCommit);
+        LOGGER.info(() -> "Checkout effettuato sulla release: " + latestTag);
+        LOGGER.info(() -> "Commit corrente: " + currentCommit);
     }
 
     private static String findLatestTag() throws IOException, InterruptedException {
@@ -261,8 +269,8 @@ public class ClassRankerBySmells {
 
         fileListBuilder.writeFileList(fileListPath, productionJavaFiles);
 
-        System.out.println("File Java di produzione trovati: " + productionJavaFiles.size());
-        System.out.println("File list PMD: " + fileListPath);
+        LOGGER.info(() -> "File Java di produzione trovati: " + productionJavaFiles.size());
+        LOGGER.info(() -> "File list PMD: " + fileListPath);
 
         PmdRunner pmdRunner = new PmdRunner(
                 PMD_EXECUTABLE,
@@ -283,7 +291,7 @@ public class ClassRankerBySmells {
                 smellCsvPath
         );
 
-        System.out.println("CSV NSmells generato in: " + smellCsvPath);
+        LOGGER.info(() -> "CSV NSmells generato in: " + smellCsvPath);
 
         return smellCsvPath;
     }
@@ -297,175 +305,203 @@ public class ClassRankerBySmells {
             String line = reader.readLine();
 
             while ((line = reader.readLine()) != null) {
-                if (line.isBlank()) {
-                    continue;
-                }
-
-                List<String> columns = parseCsvLine(line);
-
-                if (columns.size() < 4) {
-                    continue;
-                }
-
-                String project = columns.get(0).trim();
-                int releaseId = Integer.parseInt(columns.get(1).trim());
-                String classPath = columns.get(2).trim();
-                int nSmells = Integer.parseInt(columns.get(3).trim());
-
-                Path absoluteClassPath = REPOSITORY_PATH.resolve(classPath).normalize();
-
-                SourceMetrics metrics = analyzeSourceFile(absoluteClassPath);
-
-                candidates.add(new ClassCandidate(
-                        project,
-                        releaseId,
-                        classPath,
-                        nSmells,
-                        metrics.loc(),
-                        metrics.methods(),
-                        metrics.publicMethods(),
-                        metrics.branchingKeywords(),
-                        metrics.isInterface(),
-                        metrics.isEnum(),
-                        metrics.isAnnotation(),
-                        metrics.isAbstract()
-                ));
+                Optional<ClassCandidate> candidate = parseCandidateLine(line);
+                candidate.ifPresent(candidates::add);
             }
         }
 
         return candidates;
     }
 
-    private static SourceMetrics analyzeSourceFile(Path sourcePath) {
-        if (!Files.exists(sourcePath)) {
-            return new SourceMetrics(0, 0, 0, 0, false, false, false, false);
+    private static Optional<ClassCandidate> parseCandidateLine(String line) {
+        if (line.isBlank()) {
+            return Optional.empty();
         }
 
+        List<String> columns = parseCsvLine(line);
+
+        if (columns.size() < 4) {
+            return Optional.empty();
+        }
+
+        String project = columns.get(0).trim();
+        int releaseId = Integer.parseInt(columns.get(1).trim());
+        String classPath = columns.get(2).trim();
+        int nSmells = Integer.parseInt(columns.get(3).trim());
+
+        Path absoluteClassPath = REPOSITORY_PATH.resolve(classPath).normalize();
+        SourceMetrics metrics = analyzeSourceFile(absoluteClassPath);
+
+        return Optional.of(ClassCandidate.builder()
+                .project(project)
+                .releaseId(releaseId)
+                .classPath(classPath)
+                .nSmells(nSmells)
+                .loc(metrics.loc())
+                .methods(metrics.methods())
+                .publicMethods(metrics.publicMethods())
+                .branchingKeywords(metrics.branchingKeywords())
+                .isInterface(metrics.isInterface())
+                .isEnum(metrics.isEnum())
+                .isAnnotation(metrics.isAnnotation())
+                .isAbstract(metrics.isAbstract())
+                .build());
+    }
+
+    private static SourceMetrics analyzeSourceFile(Path sourcePath) {
+        if (!Files.exists(sourcePath)) {
+            return emptySourceMetrics();
+        }
+
+        try {
+            return analyzeSourceFileWithParser(sourcePath);
+        } catch (Exception parsingException) {
+            return analyzeSourceFileLineBased(sourcePath);
+        }
+    }
+
+    private static SourceMetrics analyzeSourceFileWithParser(Path sourcePath) throws IOException {
+        String code = Files.readString(sourcePath, StandardCharsets.UTF_8);
+        String codeWithoutComments = removeCommentsSafely(code);
+
+        int loc = countLoc(codeWithoutComments);
+        int branchingKeywords = countBranchingKeywords(code);
+
+        CompilationUnit compilationUnit = StaticJavaParser.parse(code);
+        String simpleClassName = sourcePath.getFileName()
+                .toString()
+                .replace(".java", "");
+
+        Optional<ClassOrInterfaceDeclaration> classOrInterface = findMainClassOrInterface(
+                compilationUnit,
+                simpleClassName
+        );
+
+        if (classOrInterface.isPresent()) {
+            return buildSourceMetricsFromClassDeclaration(
+                    classOrInterface.get(),
+                    loc,
+                    branchingKeywords
+            );
+        }
+
+        return buildSourceMetricsFromCompilationUnit(
+                compilationUnit,
+                simpleClassName,
+                loc,
+                branchingKeywords
+        );
+    }
+
+    private static Optional<ClassOrInterfaceDeclaration> findMainClassOrInterface(
+            CompilationUnit compilationUnit,
+            String simpleClassName
+    ) {
+        return compilationUnit.findFirst(
+                ClassOrInterfaceDeclaration.class,
+                declaration -> declaration.getNameAsString().equals(simpleClassName)
+        );
+    }
+
+    private static SourceMetrics buildSourceMetricsFromClassDeclaration(
+            ClassOrInterfaceDeclaration declaration,
+            int loc,
+            int branchingKeywords
+    ) {
+        int methods = declaration.findAll(MethodDeclaration.class).size()
+                + declaration.findAll(ConstructorDeclaration.class).size();
+
+        int publicMethods = countPublicMethods(declaration.findAll(MethodDeclaration.class))
+                + countPublicConstructors(declaration.findAll(ConstructorDeclaration.class));
+
+        return new SourceMetrics(
+                loc,
+                methods,
+                publicMethods,
+                branchingKeywords,
+                declaration.isInterface(),
+                false,
+                false,
+                declaration.isAbstract()
+        );
+    }
+
+    private static SourceMetrics buildSourceMetricsFromCompilationUnit(
+            CompilationUnit compilationUnit,
+            String simpleClassName,
+            int loc,
+            int branchingKeywords
+    ) {
+        boolean isEnum = compilationUnit.findFirst(
+                EnumDeclaration.class,
+                declaration -> declaration.getNameAsString().equals(simpleClassName)
+        ).isPresent();
+
+        boolean isAnnotation = compilationUnit.findFirst(
+                AnnotationDeclaration.class,
+                declaration -> declaration.getNameAsString().equals(simpleClassName)
+        ).isPresent();
+
+        int methods = compilationUnit.findAll(MethodDeclaration.class).size()
+                + compilationUnit.findAll(ConstructorDeclaration.class).size();
+
+        int publicMethods = countPublicMethods(compilationUnit.findAll(MethodDeclaration.class))
+                + countPublicConstructors(compilationUnit.findAll(ConstructorDeclaration.class));
+
+        return new SourceMetrics(
+                loc,
+                methods,
+                publicMethods,
+                branchingKeywords,
+                false,
+                isEnum,
+                isAnnotation,
+                false
+        );
+    }
+
+    private static int countPublicMethods(List<MethodDeclaration> methods) {
+        return (int) methods.stream()
+                .filter(MethodDeclaration::isPublic)
+                .count();
+    }
+
+    private static int countPublicConstructors(List<ConstructorDeclaration> constructors) {
+        return (int) constructors.stream()
+                .filter(ConstructorDeclaration::isPublic)
+                .count();
+    }
+
+    private static SourceMetrics analyzeSourceFileLineBased(Path sourcePath) {
         try {
             String code = Files.readString(sourcePath, StandardCharsets.UTF_8);
             String codeWithoutComments = removeCommentsSafely(code);
 
-            int loc = countLoc(codeWithoutComments);
-            int branchingKeywords = countBranchingKeywords(code);
-
-            CompilationUnit compilationUnit = StaticJavaParser.parse(code);
-
-            String simpleClassName = sourcePath.getFileName()
-                    .toString()
-                    .replace(".java", "");
-
-            Optional<ClassOrInterfaceDeclaration> classOrInterface =
-                    compilationUnit.findFirst(
-                            ClassOrInterfaceDeclaration.class,
-                            declaration -> declaration.getNameAsString().equals(simpleClassName)
-                    );
-
-            boolean isInterface = false;
-            boolean isAbstract = false;
-            boolean isEnum = false;
-            boolean isAnnotation = false;
-
-            int methods = 0;
-            int publicMethods = 0;
-
-            if (classOrInterface.isPresent()) {
-                ClassOrInterfaceDeclaration declaration = classOrInterface.get();
-
-                isInterface = declaration.isInterface();
-                isAbstract = declaration.isAbstract();
-
-                methods = declaration.findAll(MethodDeclaration.class).size()
-                        + declaration.findAll(ConstructorDeclaration.class).size();
-
-                publicMethods = (int) declaration.findAll(MethodDeclaration.class)
-                        .stream()
-                        .filter(MethodDeclaration::isPublic)
-                        .count();
-
-                publicMethods += (int) declaration.findAll(ConstructorDeclaration.class)
-                        .stream()
-                        .filter(ConstructorDeclaration::isPublic)
-                        .count();
-
-            } else {
-                isEnum = compilationUnit.findFirst(
-                        EnumDeclaration.class,
-                        declaration -> declaration.getNameAsString().equals(simpleClassName)
-                ).isPresent();
-
-                isAnnotation = compilationUnit.findFirst(
-                        AnnotationDeclaration.class,
-                        declaration -> declaration.getNameAsString().equals(simpleClassName)
-                ).isPresent();
-
-                methods = compilationUnit.findAll(MethodDeclaration.class).size()
-                        + compilationUnit.findAll(ConstructorDeclaration.class).size();
-
-                publicMethods = (int) compilationUnit.findAll(MethodDeclaration.class)
-                        .stream()
-                        .filter(MethodDeclaration::isPublic)
-                        .count();
-
-                publicMethods += (int) compilationUnit.findAll(ConstructorDeclaration.class)
-                        .stream()
-                        .filter(ConstructorDeclaration::isPublic)
-                        .count();
-            }
-
             return new SourceMetrics(
-                    loc,
-                    methods,
-                    publicMethods,
-                    branchingKeywords,
-                    isInterface,
-                    isEnum,
-                    isAnnotation,
-                    isAbstract
+                    countLoc(codeWithoutComments),
+                    countMethodsLineBased(code),
+                    countPublicMethodsLineBased(code),
+                    countBranchingKeywords(code),
+                    false,
+                    false,
+                    false,
+                    false
             );
-
-        } catch (Exception parsingException) {
-            try {
-                String code = Files.readString(sourcePath, StandardCharsets.UTF_8);
-                String codeWithoutComments = removeCommentsSafely(code);
-
-                return new SourceMetrics(
-                        countLoc(codeWithoutComments),
-                        countMethodsLineBased(code),
-                        countPublicMethodsLineBased(code),
-                        countBranchingKeywords(code),
-                        false,
-                        false,
-                        false,
-                        false
-                );
-
-            } catch (IOException ioException) {
-                return new SourceMetrics(0, 0, 0, 0, false, false, false, false);
-            }
+        } catch (IOException ioException) {
+            return emptySourceMetrics();
         }
+    }
+
+    private static SourceMetrics emptySourceMetrics() {
+        return new SourceMetrics(0, 0, 0, 0, false, false, false, false);
     }
 
     private static int countBranchingKeywords(String code) {
         int count = 0;
-
         String codeWithoutComments = removeCommentsSafely(code);
 
         for (String line : codeWithoutComments.split("\\R")) {
-            String trimmed = line.trim();
-
-            if (trimmed.startsWith("if ")
-                    || trimmed.startsWith("if(")
-                    || trimmed.startsWith("else if ")
-                    || trimmed.startsWith("for ")
-                    || trimmed.startsWith("for(")
-                    || trimmed.startsWith("while ")
-                    || trimmed.startsWith("while(")
-                    || trimmed.startsWith("switch ")
-                    || trimmed.startsWith("switch(")
-                    || trimmed.startsWith("case ")
-                    || trimmed.startsWith("catch ")
-                    || trimmed.startsWith("catch(")
-                    || trimmed.contains(" ? ")) {
+            if (containsBranchingKeyword(line.trim())) {
                 count++;
             }
         }
@@ -473,73 +509,50 @@ public class ClassRankerBySmells {
         return count;
     }
 
+    private static boolean containsBranchingKeyword(String trimmed) {
+        return trimmed.startsWith("if ")
+                || trimmed.startsWith("if(")
+                || trimmed.startsWith("else if ")
+                || trimmed.startsWith("for ")
+                || trimmed.startsWith("for(")
+                || trimmed.startsWith("while ")
+                || trimmed.startsWith("while(")
+                || trimmed.startsWith("switch ")
+                || trimmed.startsWith("switch(")
+                || trimmed.startsWith("case ")
+                || trimmed.startsWith("catch ")
+                || trimmed.startsWith("catch(")
+                || trimmed.contains(" ? ");
+    }
+
     private static void applyFilters(ClassCandidate candidate) {
         String normalizedPath = candidate.classPath()
                 .toLowerCase(Locale.ROOT)
                 .replace("\\", "/");
 
-        if (!isProductionJavaClass(candidate.classPath())) {
-            candidate.discardReasons.add("NOT_PRODUCTION_CLASS");
-        }
+        addDiscardReasonIf(!isProductionJavaClass(candidate.classPath()), candidate, "NOT_PRODUCTION_CLASS");
+        addDiscardReasonIf(candidate.nSmells() < MIN_NSMELLS, candidate, "LOW_NSMELLS<" + MIN_NSMELLS);
+        addDiscardReasonIf(candidate.loc() < MIN_LOC, candidate, "LOW_LOC<" + MIN_LOC);
+        addDiscardReasonIf(candidate.loc() > MAX_LOC, candidate, "TOO_LARGE_LOC>" + MAX_LOC);
+        addDiscardReasonIf(candidate.methods() > MAX_METHODS, candidate, "TOO_MANY_METHODS>" + MAX_METHODS);
+        addDiscardReasonIf(candidate.publicMethods() > MAX_PUBLIC_METHODS, candidate, "TOO_MANY_PUBLIC_METHODS>" + MAX_PUBLIC_METHODS);
+        addDiscardReasonIf(candidate.branchingKeywords() < MIN_BRANCHING_KEYWORDS, candidate, "LOW_BRANCHING<" + MIN_BRANCHING_KEYWORDS);
+        addDiscardReasonIf(candidate.methods() < MIN_METHODS, candidate, "FEW_METHODS<" + MIN_METHODS);
+        addDiscardReasonIf(candidate.publicMethods() < MIN_PUBLIC_METHODS, candidate, "FEW_PUBLIC_METHODS<" + MIN_PUBLIC_METHODS);
+        addDiscardReasonIf(candidate.isInterface(), candidate, "INTERFACE");
+        addDiscardReasonIf(candidate.isAbstract(), candidate, "ABSTRACT_CLASS");
+        addDiscardReasonIf(candidate.isEnum(), candidate, "ENUM");
+        addDiscardReasonIf(candidate.isAnnotation(), candidate, "ANNOTATION");
+        addDiscardReasonIf(containsAny(normalizedPath, GUI_KEYWORDS), candidate, "LIKELY_GUI_CLASS");
+        addDiscardReasonIf(containsAny(normalizedPath, SIMPLE_ROLE_KEYWORDS), candidate, "LIKELY_SIMPLE_ROLE");
+        addDiscardReasonIf(containsAny(normalizedPath, GENERATED_KEYWORDS), candidate, "GENERATED_CODE");
+    }
 
-        if (candidate.nSmells() < MIN_NSMELLS) {
-            candidate.discardReasons.add("LOW_NSMELLS<" + MIN_NSMELLS);
-        }
-
-        if (candidate.loc() < MIN_LOC) {
-            candidate.discardReasons.add("LOW_LOC<" + MIN_LOC);
-        }
-
-        if (candidate.loc() > MAX_LOC) {
-            candidate.discardReasons.add("TOO_LARGE_LOC>" + MAX_LOC);
-        }
-
-        if (candidate.methods() > MAX_METHODS) {
-            candidate.discardReasons.add("TOO_MANY_METHODS>" + MAX_METHODS);
-        }
-
-        if (candidate.publicMethods() > MAX_PUBLIC_METHODS) {
-            candidate.discardReasons.add("TOO_MANY_PUBLIC_METHODS>" + MAX_PUBLIC_METHODS);
-        }
-
-        if (candidate.branchingKeywords() < MIN_BRANCHING_KEYWORDS) {
-            candidate.discardReasons.add("LOW_BRANCHING<" + MIN_BRANCHING_KEYWORDS);
-        }
-
-        if (candidate.methods() < MIN_METHODS) {
-            candidate.discardReasons.add("FEW_METHODS<" + MIN_METHODS);
-        }
-
-        if (candidate.publicMethods() < MIN_PUBLIC_METHODS) {
-            candidate.discardReasons.add("FEW_PUBLIC_METHODS<" + MIN_PUBLIC_METHODS);
-        }
-
-        if (candidate.isInterface()) {
-            candidate.discardReasons.add("INTERFACE");
-        }
-
-        if (candidate.isAbstract()) {
-            candidate.discardReasons.add("ABSTRACT_CLASS");
-        }
-
-        if (candidate.isEnum()) {
-            candidate.discardReasons.add("ENUM");
-        }
-
-        if (candidate.isAnnotation()) {
-            candidate.discardReasons.add("ANNOTATION");
-        }
-
-        if (containsAny(normalizedPath, GUI_KEYWORDS)) {
-            candidate.discardReasons.add("LIKELY_GUI_CLASS");
-        }
-
-        if (containsAny(normalizedPath, SIMPLE_ROLE_KEYWORDS)) {
-            candidate.discardReasons.add("LIKELY_SIMPLE_ROLE");
-        }
-
-        if (containsAny(normalizedPath, GENERATED_KEYWORDS)) {
-            candidate.discardReasons.add("GENERATED_CODE");
+    private static void addDiscardReasonIf(boolean condition,
+                                           ClassCandidate candidate,
+                                           String reason) {
+        if (condition) {
+            candidate.discardReasons.add(reason);
         }
     }
 
@@ -599,42 +612,38 @@ public class ClassRankerBySmells {
                     "DiscardReasons"
             ));
             writer.newLine();
-
-            int rank = 1;
-
-            for (ClassCandidate row : rows) {
-                writer.write(csv(rank));
-                writer.write(",");
-                writer.write(csv(row.project()));
-                writer.write(",");
-                writer.write(csv(row.releaseId()));
-                writer.write(",");
-                writer.write(csv(row.classPath()));
-                writer.write(",");
-                writer.write(csv(row.nSmells()));
-                writer.write(",");
-                writer.write(csv(row.loc()));
-                writer.write(",");
-                writer.write(csv(row.branchingKeywords()));
-                writer.write(",");
-                writer.write(csv(row.methods()));
-                writer.write(",");
-                writer.write(csv(row.publicMethods()));
-                writer.write(",");
-                writer.write(csv(row.isInterface()));
-                writer.write(",");
-                writer.write(csv(row.isEnum()));
-                writer.write(",");
-                writer.write(csv(row.isAnnotation()));
-                writer.write(",");
-                writer.write(csv(row.isAbstract()));
-                writer.write(",");
-                writer.write(csv(row.discardReasonsText()));
-                writer.newLine();
-
-                rank++;
-            }
+            writeRows(writer, rows);
         }
+    }
+
+    private static void writeRows(BufferedWriter writer, List<ClassCandidate> rows)
+            throws IOException {
+        int rank = 1;
+
+        for (ClassCandidate row : rows) {
+            writer.write(toCsvRow(rank, row));
+            writer.newLine();
+            rank++;
+        }
+    }
+
+    private static String toCsvRow(int rank, ClassCandidate row) {
+        return String.join(",",
+                csv(rank),
+                csv(row.project()),
+                csv(row.releaseId()),
+                csv(row.classPath()),
+                csv(row.nSmells()),
+                csv(row.loc()),
+                csv(row.branchingKeywords()),
+                csv(row.methods()),
+                csv(row.publicMethods()),
+                csv(row.isInterface()),
+                csv(row.isEnum()),
+                csv(row.isAnnotation()),
+                csv(row.isAbstract()),
+                csv(row.discardReasonsText())
+        );
     }
 
     private static void printSummary(
@@ -643,112 +652,167 @@ public class ClassRankerBySmells {
             List<ClassCandidate> discarded,
             List<ClassCandidate> selected
     ) {
-        System.out.println();
-        System.out.println("===== SUMMARY =====");
-        System.out.println("Classi totali analizzate: " + all.size());
-        System.out.println("Classi accettate: " + accepted.size());
-        System.out.println("Classi scartate: " + discarded.size());
+        LOGGER.info(() -> buildSummary(all, accepted, discarded, selected));
+    }
 
-        System.out.println();
-        System.out.println("Top 10 classi accettate per NSmells:");
+    private static String buildSummary(
+            List<ClassCandidate> all,
+            List<ClassCandidate> accepted,
+            List<ClassCandidate> discarded,
+            List<ClassCandidate> selected
+    ) {
+        StringBuilder summary = new StringBuilder();
+
+        summary.append(System.lineSeparator());
+        summary.append("===== SUMMARY =====").append(System.lineSeparator());
+        summary.append("Classi totali analizzate: ").append(all.size()).append(System.lineSeparator());
+        summary.append("Classi accettate: ").append(accepted.size()).append(System.lineSeparator());
+        summary.append("Classi scartate: ").append(discarded.size()).append(System.lineSeparator());
+        summary.append(System.lineSeparator());
+        summary.append("Top 10 classi accettate per NSmells:").append(System.lineSeparator());
 
         accepted.stream()
                 .limit(10)
-                .forEach(candidate -> System.out.println(
-                        "- "
-                                + candidate.classPath()
-                                + " | NSmells="
-                                + candidate.nSmells()
-                                + " | LOC="
-                                + candidate.loc()
-                                + " | methods="
-                                + candidate.methods()
-                                + " | publicMethods="
-                                + candidate.publicMethods()
-                ));
+                .map(ClassRankerBySmells::formatCandidateSummary)
+                .forEach(line -> summary.append(line).append(System.lineSeparator()));
 
-        System.out.println();
-        System.out.println("Classi selezionate con algoritmo del nome:");
+        summary.append(System.lineSeparator());
+        summary.append("Classi selezionate con algoritmo del nome:").append(System.lineSeparator());
+        appendSelectedClassesSummary(summary, selected);
 
+        return summary.toString();
+    }
+
+    private static void appendSelectedClassesSummary(StringBuilder summary,
+                                                     List<ClassCandidate> selected) {
         if (selected.isEmpty()) {
-            System.out.println("Nessuna classe selezionata.");
+            summary.append("Nessuna classe selezionata.").append(System.lineSeparator());
         } else {
-            for (ClassCandidate candidate : selected) {
-                System.out.println(
-                        "- "
-                                + candidate.classPath()
-                                + " | NSmells="
-                                + candidate.nSmells()
-                                + " | LOC="
-                                + candidate.loc()
-                                + " | methods="
-                                + candidate.methods()
-                                + " | publicMethods="
-                                + candidate.publicMethods()
-                );
-            }
+            selected.stream()
+                    .map(ClassRankerBySmells::formatCandidateSummary)
+                    .forEach(line -> summary.append(line).append(System.lineSeparator()));
         }
+    }
+
+    private static String formatCandidateSummary(ClassCandidate candidate) {
+        return "- "
+                + candidate.classPath()
+                + " | NSmells="
+                + candidate.nSmells()
+                + " | LOC="
+                + candidate.loc()
+                + " | methods="
+                + candidate.methods()
+                + " | publicMethods="
+                + candidate.publicMethods();
     }
 
     private static String removeCommentsSafely(String code) {
         StringBuilder result = new StringBuilder();
+        CommentState state = new CommentState();
+        int index = 0;
 
-        boolean inBlockComment = false;
-        boolean inLineComment = false;
-        boolean inString = false;
-        boolean inChar = false;
-
-        for (int i = 0; i < code.length(); i++) {
-            char current = code.charAt(i);
-            char next = i + 1 < code.length() ? code.charAt(i + 1) : '\0';
-
-            if (inLineComment) {
-                if (current == '\n' || current == '\r') {
-                    inLineComment = false;
-                    result.append(current);
-                }
-                continue;
-            }
-
-            if (inBlockComment) {
-                if (current == '*' && next == '/') {
-                    inBlockComment = false;
-                    i++;
-                }
-                continue;
-            }
-
-            if (!inString && !inChar && current == '/' && next == '/') {
-                inLineComment = true;
-                i++;
-                continue;
-            }
-
-            if (!inString && !inChar && current == '/' && next == '*') {
-                inBlockComment = true;
-                i++;
-                continue;
-            }
-
-            if (!inChar && current == '"' && !isEscaped(code, i)) {
-                inString = !inString;
-            }
-
-            if (!inString && current == '\'' && !isEscaped(code, i)) {
-                inChar = !inChar;
-            }
-
-            result.append(current);
+        while (index < code.length()) {
+            index = processCommentRemovalCharacter(code, index, result, state);
         }
 
         return result.toString();
     }
 
+    private static int processCommentRemovalCharacter(String code,
+                                                      int index,
+                                                      StringBuilder result,
+                                                      CommentState state) {
+        if (state.inLineComment) {
+            return processLineCommentCharacter(code, index, result, state);
+        }
+
+        if (state.inBlockComment) {
+            return processBlockCommentCharacter(code, index, state);
+        }
+
+        return processCodeCharacter(code, index, result, state);
+    }
+
+    private static int processLineCommentCharacter(String code,
+                                                   int index,
+                                                   StringBuilder result,
+                                                   CommentState state) {
+        char current = code.charAt(index);
+
+        if (current == '\n' || current == '\r') {
+            state.inLineComment = false;
+            result.append(current);
+        }
+
+        return index + 1;
+    }
+
+    private static int processBlockCommentCharacter(String code,
+                                                    int index,
+                                                    CommentState state) {
+        char current = code.charAt(index);
+        char next = nextCharOrZero(code, index);
+
+        if (current == '*' && next == '/') {
+            state.inBlockComment = false;
+            return index + 2;
+        }
+
+        return index + 1;
+    }
+
+    private static int processCodeCharacter(String code,
+                                            int index,
+                                            StringBuilder result,
+                                            CommentState state) {
+        char current = code.charAt(index);
+        char next = nextCharOrZero(code, index);
+
+        if (!state.inString && !state.inChar && current == '/' && next == '/') {
+            state.inLineComment = true;
+            return index + 2;
+        }
+
+        if (!state.inString && !state.inChar && current == '/' && next == '*') {
+            state.inBlockComment = true;
+            return index + 2;
+        }
+
+        updateStringAndCharState(code, index, current, state);
+        result.append(current);
+
+        return index + 1;
+    }
+
+    private static char nextCharOrZero(String text, int index) {
+        if (index + 1 < text.length()) {
+            return text.charAt(index + 1);
+        }
+
+        return '\0';
+    }
+
+    private static void updateStringAndCharState(String code,
+                                                 int index,
+                                                 char current,
+                                                 CommentState state) {
+        if (!state.inChar && current == '"' && !isEscaped(code, index)) {
+            state.inString = !state.inString;
+        }
+
+        if (!state.inString && current == '\'' && !isEscaped(code, index)) {
+            state.inChar = !state.inChar;
+        }
+    }
+
     private static boolean isEscaped(String text, int index) {
         int backslashes = 0;
+        int currentIndex = index - 1;
 
-        for (int i = index - 1; i >= 0 && text.charAt(i) == '\\'; i--) {
+        while (currentIndex >= 0 && text.charAt(currentIndex) == '\\') {
             backslashes++;
+            currentIndex--;
         }
 
         return backslashes % 2 == 1;
@@ -850,30 +914,56 @@ public class ClassRankerBySmells {
     private static List<String> parseCsvLine(String line) {
         List<String> columns = new ArrayList<>();
         StringBuilder current = new StringBuilder();
-
         boolean insideQuotes = false;
+        int index = 0;
 
-        for (int i = 0; i < line.length(); i++) {
-            char currentChar = line.charAt(i);
-
-            if (currentChar == '"') {
-                if (insideQuotes && i + 1 < line.length() && line.charAt(i + 1) == '"') {
-                    current.append('"');
-                    i++;
-                } else {
-                    insideQuotes = !insideQuotes;
-                }
-            } else if (currentChar == ',' && !insideQuotes) {
-                columns.add(current.toString());
-                current.setLength(0);
-            } else {
-                current.append(currentChar);
-            }
+        while (index < line.length()) {
+            CsvParseStep step = parseCsvCharacter(line, index, insideQuotes, current, columns);
+            insideQuotes = step.insideQuotes();
+            index = step.nextIndex();
         }
 
         columns.add(current.toString());
-
         return columns;
+    }
+
+    private static CsvParseStep parseCsvCharacter(String line,
+                                                  int index,
+                                                  boolean insideQuotes,
+                                                  StringBuilder current,
+                                                  List<String> columns) {
+        char currentChar = line.charAt(index);
+
+        if (currentChar == '"') {
+            return parseQuoteCharacter(line, index, insideQuotes, current);
+        }
+
+        if (currentChar == ',' && !insideQuotes) {
+            columns.add(current.toString());
+            current.setLength(0);
+            return new CsvParseStep(index + 1, insideQuotes);
+        }
+
+        current.append(currentChar);
+        return new CsvParseStep(index + 1, insideQuotes);
+    }
+
+    private static CsvParseStep parseQuoteCharacter(String line,
+                                                    int index,
+                                                    boolean insideQuotes,
+                                                    StringBuilder current) {
+        if (isEscapedCsvQuote(line, index, insideQuotes)) {
+            current.append('"');
+            return new CsvParseStep(index + 2, insideQuotes);
+        }
+
+        return new CsvParseStep(index + 1, !insideQuotes);
+    }
+
+    private static boolean isEscapedCsvQuote(String line, int index, boolean insideQuotes) {
+        return insideQuotes
+                && index + 1 < line.length()
+                && line.charAt(index + 1) == '"';
     }
 
     private static String csv(Object value) {
@@ -898,6 +988,17 @@ public class ClassRankerBySmells {
     ) {
     }
 
+    private record CsvParseStep(int nextIndex, boolean insideQuotes) {
+    }
+
+    private static class CommentState {
+
+        private boolean inBlockComment;
+        private boolean inLineComment;
+        private boolean inString;
+        private boolean inChar;
+    }
+
     private static class ClassCandidate {
 
         private final String project;
@@ -915,32 +1016,23 @@ public class ClassRankerBySmells {
 
         private final List<String> discardReasons = new ArrayList<>();
 
-        private ClassCandidate(
-                String project,
-                int releaseId,
-                String classPath,
-                int nSmells,
-                int loc,
-                int methods,
-                int publicMethods,
-                int branchingKeywords,
-                boolean isInterface,
-                boolean isEnum,
-                boolean isAnnotation,
-                boolean isAbstract
-        ) {
-            this.project = project;
-            this.releaseId = releaseId;
-            this.classPath = classPath;
-            this.nSmells = nSmells;
-            this.loc = loc;
-            this.methods = methods;
-            this.publicMethods = publicMethods;
-            this.branchingKeywords = branchingKeywords;
-            this.isInterface = isInterface;
-            this.isEnum = isEnum;
-            this.isAnnotation = isAnnotation;
-            this.isAbstract = isAbstract;
+        private ClassCandidate(Builder builder) {
+            this.project = builder.project;
+            this.releaseId = builder.releaseId;
+            this.classPath = builder.classPath;
+            this.nSmells = builder.nSmells;
+            this.loc = builder.loc;
+            this.methods = builder.methods;
+            this.publicMethods = builder.publicMethods;
+            this.branchingKeywords = builder.branchingKeywords;
+            this.isInterface = builder.isInterface;
+            this.isEnum = builder.isEnum;
+            this.isAnnotation = builder.isAnnotation;
+            this.isAbstract = builder.isAbstract;
+        }
+
+        private static Builder builder() {
+            return new Builder();
         }
 
         private int branchingKeywords() {
@@ -993,6 +1085,86 @@ public class ClassRankerBySmells {
 
         private String discardReasonsText() {
             return String.join(";", discardReasons);
+        }
+
+        private static class Builder {
+
+            private String project;
+            private int releaseId;
+            private String classPath;
+            private int nSmells;
+            private int loc;
+            private int methods;
+            private int publicMethods;
+            private boolean isInterface;
+            private boolean isEnum;
+            private boolean isAnnotation;
+            private boolean isAbstract;
+            private int branchingKeywords;
+
+            private Builder project(String project) {
+                this.project = project;
+                return this;
+            }
+
+            private Builder releaseId(int releaseId) {
+                this.releaseId = releaseId;
+                return this;
+            }
+
+            private Builder classPath(String classPath) {
+                this.classPath = classPath;
+                return this;
+            }
+
+            private Builder nSmells(int nSmells) {
+                this.nSmells = nSmells;
+                return this;
+            }
+
+            private Builder loc(int loc) {
+                this.loc = loc;
+                return this;
+            }
+
+            private Builder methods(int methods) {
+                this.methods = methods;
+                return this;
+            }
+
+            private Builder publicMethods(int publicMethods) {
+                this.publicMethods = publicMethods;
+                return this;
+            }
+
+            private Builder branchingKeywords(int branchingKeywords) {
+                this.branchingKeywords = branchingKeywords;
+                return this;
+            }
+
+            private Builder isInterface(boolean isInterface) {
+                this.isInterface = isInterface;
+                return this;
+            }
+
+            private Builder isEnum(boolean isEnum) {
+                this.isEnum = isEnum;
+                return this;
+            }
+
+            private Builder isAnnotation(boolean isAnnotation) {
+                this.isAnnotation = isAnnotation;
+                return this;
+            }
+
+            private Builder isAbstract(boolean isAbstract) {
+                this.isAbstract = isAbstract;
+                return this;
+            }
+
+            private ClassCandidate build() {
+                return new ClassCandidate(this);
+            }
         }
     }
 }

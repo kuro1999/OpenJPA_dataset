@@ -42,16 +42,16 @@ public class AffectedVersionIVResolver {
                 source = "NONE";
             }
 
-            EnhancedTicket updatedTicket = new EnhancedTicket(
-                    ticket.getTicketId(),
-                    ticket.getCreationDate(),
-                    ticket.getResolutionDate(),
-                    ticket.getAffectedVersions(),
-                    ticket.getOpeningVersion(),
-                    ticket.getFixedVersion(),
-                    initialIV,
-                    source
-            );
+            EnhancedTicket updatedTicket = EnhancedTicket.builder()
+                    .ticketId(ticket.getTicketId())
+                    .creationDate(ticket.getCreationDate())
+                    .resolutionDate(ticket.getResolutionDate())
+                    .affectedVersions(ticket.getAffectedVersions())
+                    .openingVersion(ticket.getOpeningVersion())
+                    .fixedVersion(ticket.getFixedVersion())
+                    .injectedVersion(initialIV)
+                    .injectedVersionSource(source)
+                    .build();
 
             updatedTickets.add(updatedTicket);
         }
@@ -78,26 +78,8 @@ public class AffectedVersionIVResolver {
             String normalized = av.trim();
             Release release = findReleaseByName(normalized, releases);
 
-            if (release == null) {
-                continue;
-            }
-
-            int releaseIndex = release.getIndex();
-
-            /*
-             * Vincoli di coerenza:
-             * - la IV non può essere successiva alla OV
-             * - la IV deve essere strettamente precedente alla FV
-             */
-            if (releaseIndex > ovIndex) {
-                continue;
-            }
-
-            if (releaseIndex >= fvIndex) {
-                continue;
-            }
-
-            if (oldestValidAffectedRelease == null || releaseIndex < oldestValidAffectedRelease.getIndex()) {
+            if (isValidAffectedRelease(release, ovIndex, fvIndex)
+                    && isOlderThanCurrentOldest(release, oldestValidAffectedRelease)) {
                 oldestValidAffectedRelease = release;
             }
         }
@@ -107,6 +89,26 @@ public class AffectedVersionIVResolver {
         }
 
         return oldestValidAffectedRelease.getVersionName();
+    }
+
+    private static boolean isValidAffectedRelease(Release release, int ovIndex, int fvIndex) {
+        if (release == null) {
+            return false;
+        }
+
+        int releaseIndex = release.getIndex();
+
+        /*
+         * Vincoli di coerenza:
+         * - la IV non può essere successiva alla OV
+         * - la IV deve essere strettamente precedente alla FV
+         */
+        return releaseIndex <= ovIndex && releaseIndex < fvIndex;
+    }
+
+    private static boolean isOlderThanCurrentOldest(Release release, Release oldestValidAffectedRelease) {
+        return oldestValidAffectedRelease == null
+                || release.getIndex() < oldestValidAffectedRelease.getIndex();
     }
 
     private static Release findReleaseByName(String versionName, List<Release> releases) {

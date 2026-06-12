@@ -10,10 +10,13 @@ import java.io.BufferedWriter;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.text.MessageFormat;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 /**
  * Pipeline autonoma per il calcolo di NSmells.
@@ -26,6 +29,8 @@ import java.util.List;
  * - produce un CSV finale con NSmells per ogni coppia classe-release.
  */
 public class SmellMain {
+
+    private static final Logger LOGGER = Logger.getLogger(SmellMain.class.getName());
 
     private static final String PROJECT_NAME = "OPENJPA";
     private static final String RELEASES_FILE = PROJECT_NAME + "VersionInfo.csv";
@@ -69,16 +74,16 @@ public class SmellMain {
         String originalGitRef = null;
 
         try {
-            System.out.println("Avvio pipeline smell per il progetto " + PROJECT_NAME + ".");
+            LOGGER.info(() -> "Avvio pipeline smell per il progetto " + PROJECT_NAME + ".");
 
             originalGitRef = getCurrentGitRef();
 
             List<Release> allReleases = ReleaseCsvReader.loadReleases(RELEASES_FILE);
-            System.out.println("Release lette: " + allReleases.size());
+            LOGGER.info(() -> "Release lette: " + allReleases.size());
 
             List<Release> selectedReleases =
                     ReleaseSelector.selectInitialReleases(allReleases, RELEASES_TO_KEEP);
-            System.out.println("Release selezionate per gli smell: " + selectedReleases.size());
+            LOGGER.info(() -> "Release selezionate per gli smell: " + selectedReleases.size());
 
             initializeFinalSmellsFile();
 
@@ -86,17 +91,14 @@ public class SmellMain {
                 computeSmellsForRelease(release, originalGitRef);
             }
 
-            System.out.println("CSV finale smell generato in: " + FINAL_SMELLS_FILE);
-            System.out.println("Pipeline smell completata correttamente.");
+            LOGGER.info(() -> "CSV finale smell generato in: " + FINAL_SMELLS_FILE);
+            LOGGER.info("Pipeline smell completata correttamente.");
 
-        } catch (IOException | InterruptedException e) {
-            System.err.println("Errore durante la pipeline smell: " + e.getMessage());
-            e.printStackTrace();
-
-            if (e instanceof InterruptedException) {
-                Thread.currentThread().interrupt();
-            }
-
+        } catch (IOException e) {
+            LOGGER.log(Level.SEVERE, "Errore durante la pipeline smell.", e);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            LOGGER.log(Level.SEVERE, "Pipeline smell interrotta.", e);
         } finally {
             restoreOriginalGitRef(originalGitRef);
         }
@@ -107,7 +109,7 @@ public class SmellMain {
 
         int releaseId = Integer.parseInt(release.getVersionId());
 
-        System.out.println("Calcolo smell per release "
+        LOGGER.info(() -> "Calcolo smell per release "
                 + releaseId
                 + " - "
                 + release.getVersionName()
@@ -117,7 +119,9 @@ public class SmellMain {
         String snapshotCommitHash = findLastCommitOfReleaseDay(release.getDate(), baseGitRef);
 
         if (snapshotCommitHash.isBlank()) {
-            System.out.println("Nessuno snapshot trovato per release " + releaseId + ". Release saltata.");
+            LOGGER.warning(() -> "Nessuno snapshot trovato per release "
+                    + releaseId
+                    + ". Release saltata.");
             return;
         }
 
@@ -136,7 +140,8 @@ public class SmellMain {
         List<String> productionJavaFiles = fileListBuilder.findProductionJavaFiles(REPOSITORY_PATH);
         fileListBuilder.writeFileList(fileListPath, productionJavaFiles);
 
-        System.out.println("Release " + releaseId
+        LOGGER.info(() -> "Release "
+                + releaseId
                 + " - file Java di produzione trovati: "
                 + productionJavaFiles.size());
 
@@ -161,7 +166,8 @@ public class SmellMain {
 
         appendReleaseSmellsToFinalFile(releaseOutputPath);
 
-        System.out.println("Release " + releaseId
+        LOGGER.info(() -> "Release "
+                + releaseId
                 + " - smell completati. CSV parziale: "
                 + releaseOutputPath);
     }
@@ -235,14 +241,16 @@ public class SmellMain {
                     originalGitRef
             );
 
-            System.out.println("Repository ripristinato su: " + originalGitRef);
-        } catch (IOException | InterruptedException e) {
-            System.err.println("Impossibile ripristinare il repository su: " + originalGitRef);
-            e.printStackTrace();
-
-            if (e instanceof InterruptedException) {
-                Thread.currentThread().interrupt();
-            }
+            LOGGER.info(() -> "Repository ripristinato su: " + originalGitRef);
+        } catch (IOException e) {
+            LOGGER.log(Level.WARNING,
+                    MessageFormat.format("Impossibile ripristinare il repository su: {0}", originalGitRef),
+                    e);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            LOGGER.log(Level.WARNING,
+                    MessageFormat.format("Ripristino del repository interrotto: {0}", originalGitRef),
+                    e);
         }
     }
 

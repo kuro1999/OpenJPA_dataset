@@ -5,9 +5,11 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
+import java.util.logging.Logger;
 
 public class PmdRunner {
 
+    private static final Logger LOGGER = Logger.getLogger(PmdRunner.class.getName());
     private static final long PMD_TIMEOUT_MINUTES = 10;
 
     private final Path pmdExecutable;
@@ -63,7 +65,7 @@ public class PmdRunner {
                     + logPath);
         }
 
-        System.out.println("Log PMD generato in: " + logPath);
+        LOGGER.info(() -> "Log PMD generato in: " + logPath);
 
         return reportPath;
     }

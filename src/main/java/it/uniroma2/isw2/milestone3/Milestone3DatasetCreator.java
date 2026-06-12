@@ -1,4 +1,5 @@
 package it.uniroma2.isw2.milestone3;
+
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.IOException;
@@ -7,8 +8,11 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.logging.Logger;
 
 public class Milestone3DatasetCreator {
+
+    private static final Logger LOGGER = Logger.getLogger(Milestone3DatasetCreator.class.getName());
 
     private static final Path INPUT_CSV = Path.of(
             "C:\\Users\\edoar\\OneDrive\\Desktop\\ISW2\\isw2-dataset-openjpa\\dataset_OPENJPA.csv"
@@ -17,6 +21,8 @@ public class Milestone3DatasetCreator {
     private static final String NSMELLS_COLUMN = "NSMELLS";
     private static final String SMELL_DENSITY_COLUMN = "SMELL_DENSITY";
     private static final String BUGGINESS_COLUMN = "Bugginess";
+    private static final String ZERO_VALUE = "0";
+    private static final String ROWS_SUFFIX = " righe";
 
     public static void main(String[] args) throws IOException {
         Path outputDir = INPUT_CSV.getParent().resolve("milestone3");
@@ -41,8 +47,8 @@ public class Milestone3DatasetCreator {
                 datasetBPlus.add(row);
 
                 List<String> syntheticRow = new ArrayList<>(row);
-                syntheticRow.set(nSmellsIndex, "0");
-                syntheticRow.set(smellDensityIndex, "0");
+                syntheticRow.set(nSmellsIndex, ZERO_VALUE);
+                syntheticRow.set(smellDensityIndex, ZERO_VALUE);
                 datasetB.add(syntheticRow);
             } else if (nSmells == 0) {
                 datasetC.add(row);
@@ -66,13 +72,22 @@ public class Milestone3DatasetCreator {
                 bugginessIndex
         );
 
-        System.out.println("Dataset Milestone 3 creati correttamente.");
-        System.out.println("Cartella output: " + outputDir.toAbsolutePath());
-        System.out.println();
-        System.out.println("A_original.csv: " + datasetA.size() + " righe");
-        System.out.println("B_plus_smelly.csv: " + datasetBPlus.size() + " righe");
-        System.out.println("B_synthetic_zero_smells.csv: " + datasetB.size() + " righe");
-        System.out.println("C_no_smells.csv: " + datasetC.size() + " righe");
+        logGeneratedDatasets(outputDir, datasetA, datasetBPlus, datasetB, datasetC);
+    }
+
+    private static void logGeneratedDatasets(
+            Path outputDir,
+            List<List<String>> datasetA,
+            List<List<String>> datasetBPlus,
+            List<List<String>> datasetB,
+            List<List<String>> datasetC
+    ) {
+        LOGGER.info("Dataset Milestone 3 creati correttamente.");
+        LOGGER.info(() -> "Cartella output: " + outputDir.toAbsolutePath());
+        LOGGER.info(() -> "A_original.csv: " + datasetA.size() + ROWS_SUFFIX);
+        LOGGER.info(() -> "B_plus_smelly.csv: " + datasetBPlus.size() + ROWS_SUFFIX);
+        LOGGER.info(() -> "B_synthetic_zero_smells.csv: " + datasetB.size() + ROWS_SUFFIX);
+        LOGGER.info(() -> "C_no_smells.csv: " + datasetC.size() + ROWS_SUFFIX);
     }
 
     private static CsvTable readCsv(Path inputCsv) throws IOException {
@@ -117,6 +132,7 @@ public class Milestone3DatasetCreator {
         if (!line.isEmpty() && line.charAt(0) == '\uFEFF') {
             return line.substring(1);
         }
+
         return line;
     }
 
@@ -139,18 +155,26 @@ public class Milestone3DatasetCreator {
     private static int countCharOutsideQuotes(String line, char target) {
         boolean inQuotes = false;
         int count = 0;
+        int index = 0;
 
-        for (int i = 0; i < line.length(); i++) {
-            char current = line.charAt(i);
+        while (index < line.length()) {
+            char current = line.charAt(index);
 
             if (current == '"') {
-                if (inQuotes && i + 1 < line.length() && line.charAt(i + 1) == '"') {
-                    i++;
+                boolean escapedQuote = isEscapedQuote(line, index, inQuotes);
+
+                if (escapedQuote) {
+                    index += 2;
                 } else {
                     inQuotes = !inQuotes;
+                    index++;
                 }
-            } else if (current == target && !inQuotes) {
-                count++;
+            } else {
+                if (current == target && !inQuotes) {
+                    count++;
+                }
+
+                index++;
             }
         }
 
@@ -161,27 +185,41 @@ public class Milestone3DatasetCreator {
         List<String> values = new ArrayList<>();
         StringBuilder currentValue = new StringBuilder();
         boolean inQuotes = false;
+        int index = 0;
 
-        for (int i = 0; i < line.length(); i++) {
-            char current = line.charAt(i);
+        while (index < line.length()) {
+            char current = line.charAt(index);
 
             if (current == '"') {
-                if (inQuotes && i + 1 < line.length() && line.charAt(i + 1) == '"') {
+                boolean escapedQuote = isEscapedQuote(line, index, inQuotes);
+
+                if (escapedQuote) {
                     currentValue.append('"');
-                    i++;
+                    index += 2;
                 } else {
                     inQuotes = !inQuotes;
+                    index++;
                 }
-            } else if (current == delimiter && !inQuotes) {
-                values.add(currentValue.toString());
-                currentValue.setLength(0);
             } else {
-                currentValue.append(current);
+                if (current == delimiter && !inQuotes) {
+                    values.add(currentValue.toString());
+                    currentValue.setLength(0);
+                } else {
+                    currentValue.append(current);
+                }
+
+                index++;
             }
         }
 
         values.add(currentValue.toString());
         return values;
+    }
+
+    private static boolean isEscapedQuote(String line, int index, boolean inQuotes) {
+        return inQuotes
+                && index + 1 < line.length()
+                && line.charAt(index + 1) == '"';
     }
 
     private static void writeCsv(

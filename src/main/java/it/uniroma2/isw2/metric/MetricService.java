@@ -19,6 +19,9 @@ import it.uniroma2.isw2.model.Release;
 import it.uniroma2.isw2.model.ReleaseJavaClass;
 import it.uniroma2.isw2.proportion.DateUtils;
 
+import java.text.MessageFormat;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -46,6 +49,7 @@ import java.util.regex.Pattern;
  * Gli smell non sono calcolati qui perché vengono gestiti separatamente.
  */
 public class MetricService {
+    private static final Logger LOGGER = Logger.getLogger(MetricService.class.getName());
 
     private static final DateTimeFormatter GIT_BEFORE_FORMAT =
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
@@ -111,36 +115,36 @@ public class MetricService {
                     HistoricalMetrics historicalMetrics =
                             computeHistoricalMetrics(javaClass.getClassPath(), release.getDate());
 
-                    result.add(new ClassReleaseMetric(
-                            projectName,
-                            releaseId,
-                            normalizePath(javaClass.getClassPath()),
+                    result.add(ClassReleaseMetric.builder()
+                            .project(projectName)
+                            .releaseId(releaseId)
+                            .classPath(normalizePath(javaClass.getClassPath()))
 
-                            sourceMetrics.sizeLoc,
-                            sourceMetrics.nom,
-                            sourceMetrics.avgMethodSize,
-                            sourceMetrics.cycloComplexity,
-                            sourceMetrics.fanOut,
+                            .sizeLoc(sourceMetrics.sizeLoc)
+                            .nom(sourceMetrics.nom)
+                            .avgMethodSize(sourceMetrics.avgMethodSize)
+                            .cycloComplexity(sourceMetrics.cycloComplexity)
+                            .fanOut(sourceMetrics.fanOut)
 
-                            historicalMetrics.nr,
-                            historicalMetrics.fixRate,
-                            historicalMetrics.nAuth,
+                            .nr(historicalMetrics.nr)
+                            .fixRate(historicalMetrics.fixRate)
+                            .nAuth(historicalMetrics.nAuth)
 
-                            historicalMetrics.locAdded,
-                            historicalMetrics.maxLocAdded,
-                            historicalMetrics.churn,
-                            historicalMetrics.maxChurn,
-                            historicalMetrics.maxChangeSetSize,
-                            historicalMetrics.avgModifiedDirs,
+                            .locAdded(historicalMetrics.locAdded)
+                            .maxLocAdded(historicalMetrics.maxLocAdded)
+                            .churn(historicalMetrics.churn)
+                            .maxChurn(historicalMetrics.maxChurn)
+                            .maxChangeSetSize(historicalMetrics.maxChangeSetSize)
+                            .avgModifiedDirs(historicalMetrics.avgModifiedDirs)
 
-                            historicalMetrics.classAge,
-                            historicalMetrics.ageSinceLastChange,
-                            historicalMetrics.ownershipRatio,
-                            historicalMetrics.crossDirectoryChangeRatio
-                    ));
+                            .classAge(historicalMetrics.classAge)
+                            .ageSinceLastChange(historicalMetrics.ageSinceLastChange)
+                            .ownershipRatio(historicalMetrics.ownershipRatio)
+                            .crossDirectoryChangeRatio(historicalMetrics.crossDirectoryChangeRatio)
+                            .build());
                 }
 
-                System.out.println("Metriche calcolate per release "
+                LOGGER.info(() -> "Metriche calcolate per release "
                         + release.getVersionName()
                         + " (" + releaseId + ").");
             }
@@ -150,9 +154,13 @@ public class MetricService {
         } finally {
             try {
                 checkout(originalCommitHash);
-            } catch (Exception e) {
-                System.out.println("Attenzione: impossibile ripristinare il commit originale della repository.");
-                e.printStackTrace();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                LOGGER.log(Level.WARNING,
+                        "Ripristino del commit originale interrotto.", e);
+            } catch (IOException e) {
+                LOGGER.log(Level.WARNING,
+                        "Attenzione: impossibile ripristinare il commit originale della repository.", e);
             }
         }
 
@@ -428,47 +436,40 @@ public class MetricService {
         CurrentCommit currentCommit = null;
 
         for (String line : lines) {
-            if (line.startsWith("__COMMIT__")) {
-                if (currentCommit != null) {
-                    CommitFileStats stats = computeCommitFileStats(
-                            currentCommit.commitHash,
-                            classPath
-                    );
-
-                    accumulator.accept(
-                            currentCommit,
-                            stats,
-                            isFixCommit(currentCommit.commitHash)
-                    );
-                }
-
-                currentCommit = parseCommitHeader(line);
-                continue;
-            }
-
-            if (currentCommit == null) {
-                continue;
-            }
-
-            String trimmed = line.trim();
-
-            if (trimmed.isBlank()) {
-                continue;
-            }
-
-            String[] parts = trimmed.split("\\t");
-
-            if (parts.length < 2) {
-                continue;
-            }
-
-            int added = parseNumstatValue(parts[0]);
-            int deleted = parseNumstatValue(parts[1]);
-
-            currentCommit.added += added;
-            currentCommit.deleted += deleted;
+            currentCommit = processHistoricalLogLine(
+                    line,
+                    currentCommit,
+                    classPath,
+                    accumulator
+            );
         }
 
+        acceptCurrentCommit(currentCommit, classPath, accumulator);
+
+        return accumulator.toHistoricalMetrics(currentReleaseDate);
+    }
+
+    private CurrentCommit processHistoricalLogLine(String line,
+                                                   CurrentCommit currentCommit,
+                                                   String classPath,
+                                                   HistoricalAccumulator accumulator)
+            throws IOException, InterruptedException {
+        if (line.startsWith("__COMMIT__")) {
+            acceptCurrentCommit(currentCommit, classPath, accumulator);
+            return parseCommitHeader(line);
+        }
+
+        if (currentCommit != null) {
+            addNumstatToCurrentCommit(line, currentCommit);
+        }
+
+        return currentCommit;
+    }
+
+    private void acceptCurrentCommit(CurrentCommit currentCommit,
+                                     String classPath,
+                                     HistoricalAccumulator accumulator)
+            throws IOException, InterruptedException {
         if (currentCommit != null) {
             CommitFileStats stats = computeCommitFileStats(
                     currentCommit.commitHash,
@@ -481,8 +482,23 @@ public class MetricService {
                     isFixCommit(currentCommit.commitHash)
             );
         }
+    }
 
-        return accumulator.toHistoricalMetrics(currentReleaseDate);
+    private void addNumstatToCurrentCommit(String line,
+                                           CurrentCommit currentCommit) {
+        String trimmed = line.trim();
+
+        if (!trimmed.isBlank()) {
+            String[] parts = trimmed.split("\\t");
+
+            if (parts.length >= 2) {
+                int added = parseNumstatValue(parts[0]);
+                int deleted = parseNumstatValue(parts[1]);
+
+                currentCommit.added += added;
+                currentCommit.deleted += deleted;
+            }
+        }
     }
 
     private CurrentCommit parseCommitHeader(String line) {
@@ -529,17 +545,15 @@ public class MetricService {
         for (String file : changedFiles) {
             String normalizedFile = normalizePath(file);
 
-            if (normalizedFile.isBlank()) {
-                continue;
-            }
+            if (!normalizedFile.isBlank()) {
+                changeSetSize++;
 
-            changeSetSize++;
+                String currentDirectory = getDirectory(normalizedFile);
+                modifiedDirectories.add(currentDirectory);
 
-            String currentDirectory = getDirectory(normalizedFile);
-            modifiedDirectories.add(currentDirectory);
-
-            if (!currentDirectory.equals(classDirectory)) {
-                crossDirectoryChange = true;
+                if (!currentDirectory.equals(classDirectory)) {
+                    crossDirectoryChange = true;
+                }
             }
         }
 
@@ -624,28 +638,13 @@ public class MetricService {
                 }
             }
         } catch (IOException e) {
-            System.out.println("Attenzione: impossibile leggere i fix commit da "
-                    + ticketFixCommitsFile);
+            LOGGER.log(Level.WARNING, MessageFormat.format("Attenzione: impossibile leggere i fix commit da {0}", ticketFixCommitsFile), e);
         }
 
         return result;
     }
 
-    private static long daysBetweenCommitAndRelease(long commitEpochSeconds,
-                                                    LocalDateTime releaseDate) {
-        if (commitEpochSeconds <= 0) {
-            return 0;
-        }
 
-        LocalDateTime commitDate = LocalDateTime.ofInstant(
-                Instant.ofEpochSecond(commitEpochSeconds),
-                ZoneOffset.UTC
-        );
-
-        long days = ChronoUnit.DAYS.between(commitDate, releaseDate);
-
-        return Math.max(days, 0);
-    }
 
     private static double safeRatio(double numerator,
                                     double denominator) {
@@ -799,6 +798,22 @@ public class MetricService {
             metrics.crossDirectoryChangeRatio = safeRatio(crossDirectoryCommits, nr);
 
             return metrics;
+        }
+
+        private static long daysBetweenCommitAndRelease(long commitEpochSeconds,
+                                                        LocalDateTime releaseDate) {
+            if (commitEpochSeconds <= 0) {
+                return 0;
+            }
+
+            LocalDateTime commitDate = LocalDateTime.ofInstant(
+                    Instant.ofEpochSecond(commitEpochSeconds),
+                    ZoneOffset.UTC
+            );
+
+            long days = ChronoUnit.DAYS.between(commitDate, releaseDate);
+
+            return Math.max(days, 0);
         }
 
         private double computeOwnershipRatio() {

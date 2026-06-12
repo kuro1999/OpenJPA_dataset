@@ -24,11 +24,14 @@ import java.util.Map;
  */
 public class FinalDatasetMerger {
 
+    static String classPathString = "ClassPath";
+    static String sizeLocString = "SIZE_LOC";
+
     private static final List<String> OUTPUT_HEADERS = Arrays.asList(
             "ReleaseIndex",
-            "ClassPath",
+            classPathString,
 
-            "SIZE_LOC",
+            sizeLocString,
             "NOM",
             "AVG_METHOD_SIZE",
             "CYCLO_COMPLEXITY",
@@ -116,7 +119,7 @@ public class FinalDatasetMerger {
 
                 CsvRow smellRow = smellsByKey.get(key);
 
-                int sizeLoc = parseIntOrZero(metricRow.get("SIZE_LOC"));
+                int sizeLoc = parseIntOrZero(metricRow.get(sizeLocString));
                 int nSmells = extractNSmells(smellRow);
                 double smellDensity = safeRatio(nSmells, Math.max(1, sizeLoc));
 
@@ -124,7 +127,7 @@ public class FinalDatasetMerger {
 
 
                 outputValues.add(labelRow.get("ReleaseIndex"));
-                outputValues.add(labelRow.get("ClassPath"));
+                outputValues.add(labelRow.get(classPathString));
 
                 for (String metricHeader : METRIC_HEADERS) {
                     outputValues.add(metricRow.get(metricHeader));
@@ -153,7 +156,7 @@ public class FinalDatasetMerger {
     private static String buildKey(CsvRow row) {
         String project = normalizeValue(row.get("Project"));
         String releaseId = normalizeValue(row.get("ReleaseID"));
-        String classPath = normalizePath(row.get("ClassPath"));
+        String classPath = normalizePath(row.get(classPathString));
 
         return project + "|" + releaseId + "|" + classPath;
     }
@@ -209,7 +212,7 @@ public class FinalDatasetMerger {
             }
         }
 
-        return new CsvTable(headers, rows);
+        return new CsvTable(rows);
     }
 
     private static List<String> parseCsvLine(String line) {
@@ -217,25 +220,31 @@ public class FinalDatasetMerger {
         StringBuilder currentValue = new StringBuilder();
 
         boolean insideQuotes = false;
+        int index = 0;
 
-        for (int i = 0; i < line.length(); i++) {
-            char currentChar = line.charAt(i);
+        while (index < line.length()) {
+            char currentChar = line.charAt(index);
 
             if (currentChar == '"') {
-                if (insideQuotes
-                        && i + 1 < line.length()
-                        && line.charAt(i + 1) == '"') {
+                boolean isEscapedQuote = insideQuotes
+                        && index + 1 < line.length()
+                        && line.charAt(index + 1) == '"';
+
+                if (isEscapedQuote) {
                     currentValue.append('"');
-                    i++;
-                } else {
-                    insideQuotes = !insideQuotes;
+                    index += 2;
+                    continue;
                 }
+
+                insideQuotes = !insideQuotes;
             } else if (currentChar == ',' && !insideQuotes) {
                 values.add(currentValue.toString().trim());
                 currentValue.setLength(0);
             } else {
                 currentValue.append(currentChar);
             }
+
+            index++;
         }
 
         values.add(currentValue.toString().trim());
@@ -308,16 +317,6 @@ public class FinalDatasetMerger {
         return String.format(Locale.US, "%.6f", value);
     }
 
-    private static String normalizeHeader(String header) {
-        if (header == null) {
-            return "";
-        }
-
-        return header
-                .replace("\uFEFF", "")
-                .trim()
-                .toLowerCase(Locale.ROOT);
-    }
 
     private static String normalizeValue(String value) {
         if (value == null) {
@@ -347,12 +346,9 @@ public class FinalDatasetMerger {
 
     private static class CsvTable {
 
-        private final List<String> headers;
         private final List<CsvRow> rows;
 
-        private CsvTable(List<String> headers,
-                         List<CsvRow> rows) {
-            this.headers = headers;
+        private CsvTable(List<CsvRow> rows) {
             this.rows = rows;
         }
     }
@@ -364,6 +360,17 @@ public class FinalDatasetMerger {
         private void put(String header,
                          String value) {
             valuesByHeader.put(normalizeHeader(header), value);
+        }
+
+        private static String normalizeHeader(String header) {
+            if (header == null) {
+                return "";
+            }
+
+            return header
+                    .replace("\uFEFF", "")
+                    .trim()
+                    .toLowerCase(Locale.ROOT);
         }
 
         private String get(String header) {

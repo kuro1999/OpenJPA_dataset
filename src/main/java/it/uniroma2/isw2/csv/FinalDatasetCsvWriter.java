@@ -87,9 +87,6 @@ public class FinalDatasetCsvWriter {
             String normalizedClassPath = normalizePath(ticketBuggyClass.getClassPath());
 
             for (Release release : selectedReleases) {
-                if (!affectedReleaseNames.contains(release.getVersionName())) {
-                    continue;
-                }
 
                 String positiveKey = buildClassReleaseKey(
                         normalizedClassPath,
@@ -100,7 +97,7 @@ public class FinalDatasetCsvWriter {
                  * Mantieni il positivo solo se la classe esiste davvero
                  * nello snapshot della release.
                  */
-                if (!existingClassReleaseKeys.contains(positiveKey)) {
+                if (!existingClassReleaseKeys.contains(positiveKey) || !affectedReleaseNames.contains(release.getVersionName())) {
                     continue;
                 }
 

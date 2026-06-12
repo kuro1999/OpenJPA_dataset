@@ -120,22 +120,30 @@ public class PmdSmellCsvBuilder {
         List<String> columns = new ArrayList<>();
         StringBuilder current = new StringBuilder();
         boolean insideQuotes = false;
+        int index = 0;
 
-        for (int i = 0; i < line.length(); i++) {
-            char currentChar = line.charAt(i);
+        while (index < line.length()) {
+            char currentChar = line.charAt(index);
 
             if (currentChar == '"') {
-                if (insideQuotes && i + 1 < line.length() && line.charAt(i + 1) == '"') {
+                boolean escapedQuote = insideQuotes
+                        && index + 1 < line.length()
+                        && line.charAt(index + 1) == '"';
+
+                if (escapedQuote) {
                     current.append('"');
-                    i++;
+                    index += 2;
                 } else {
                     insideQuotes = !insideQuotes;
+                    index++;
                 }
             } else if (currentChar == ',' && !insideQuotes) {
                 columns.add(current.toString());
                 current.setLength(0);
+                index++;
             } else {
                 current.append(currentChar);
+                index++;
             }
         }
 
