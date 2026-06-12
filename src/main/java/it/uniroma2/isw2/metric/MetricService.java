@@ -20,6 +20,7 @@ import it.uniroma2.isw2.model.ReleaseJavaClass;
 import it.uniroma2.isw2.proportion.DateUtils;
 
 import java.text.MessageFormat;
+import java.time.ZonedDateTime;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.io.IOException;
@@ -806,12 +807,12 @@ public class MetricService {
                 return 0;
             }
 
-            LocalDateTime commitDate = LocalDateTime.ofInstant(
-                    Instant.ofEpochSecond(commitEpochSeconds),
-                    ZoneOffset.UTC
-            );
+            ZonedDateTime commitDate = Instant.ofEpochSecond(commitEpochSeconds)
+                    .atZone(ZoneOffset.UTC);
 
-            long days = ChronoUnit.DAYS.between(commitDate, releaseDate);
+            ZonedDateTime releaseDateUtc = releaseDate.atZone(ZoneOffset.UTC);
+
+            long days = ChronoUnit.DAYS.between(commitDate, releaseDateUtc);
 
             return Math.max(days, 0);
         }

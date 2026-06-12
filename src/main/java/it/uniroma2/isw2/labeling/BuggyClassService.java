@@ -314,9 +314,7 @@ public class BuggyClassService {
             for (String line : diffLines) {
                 int[] range = extractParentRangeFromDiffLine(line);
 
-                if (range != null) {
-                    ranges.add(range);
-                }
+                ranges.add(range);
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
