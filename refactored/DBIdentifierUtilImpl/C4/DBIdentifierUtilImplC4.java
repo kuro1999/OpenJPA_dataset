@@ -1,0 +1,615 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+package org.apache.openjpa.jdbc.identifier;
+
+import org.apache.openjpa.jdbc.conf.JDBCConfiguration;
+import org.apache.openjpa.jdbc.identifier.DBIdentifier.DBIdentifierType;
+import org.apache.openjpa.jdbc.schema.Column;
+import org.apache.openjpa.jdbc.schema.NameSet;
+import org.apache.openjpa.jdbc.schema.Schema;
+import org.apache.openjpa.jdbc.schema.SchemaGroup;
+import org.apache.openjpa.jdbc.schema.Table;
+import org.apache.openjpa.jdbc.sql.DBDictionary;
+import org.apache.openjpa.lib.conf.Configurable;
+import org.apache.openjpa.lib.conf.Configuration;
+import org.apache.openjpa.lib.identifier.IdentifierConfiguration;
+import org.apache.openjpa.lib.identifier.IdentifierRule;
+import org.apache.openjpa.lib.identifier.IdentifierUtil;
+import org.apache.openjpa.lib.identifier.IdentifierUtilImpl;
+import org.apache.openjpa.lib.util.StringUtil;
+
+/**
+ * Refactored version of DBIdentifierUtilImpl with improved maintainability.
+ * <p>
+ * This class preserves the original behavior while addressing static analysis
+ * issues (renamed configuration field, reduced complexity in makeIdentifierValid,
+ * removed unused parameter warnings, simplified loops and branching).
+ * <p>
+ * It is intended as a drop-in replacement for the original implementation.
+ */
+public class DBIdentifierUtilImpl extends IdentifierUtilImpl implements DBIdentifierUtil,
+        Configurable {
+
+    private JDBCConfiguration conf = null;
+
+    public DBIdentifierUtilImpl() {
+    }
+
+    public DBIdentifierUtilImpl(IdentifierConfiguration config) {
+        super(config);
+    }
+
+    @Override
+    public DBIdentifier getValidColumnIdentifier(DBIdentifier name, Table table,
+                                                 int maxLen, boolean checkForUniqueness) {
+        if (DBIdentifier.isNull(name)) {
+            return name;
+        }
+        String rule = name.getType().name();
+        maxLen = getMaxLen(rule, name, maxLen);
+
+        DBIdentifier sName = DBIdentifier.removeLeading(name, IdentifierUtil.UNDERSCORE);
+        return makeIdentifierValid(sName, table, maxLen, checkForUniqueness);
+    }
+
+    @Override
+    public DBIdentifier getValidForeignKeyIdentifier(DBIdentifier name, Table table, Table toTable, int maxLen) {
+        if (DBIdentifier.isNull(name)) {
+            return name;
+        }
+        String rule = name.getType().name();
+        maxLen = getMaxLen(rule, name, maxLen);
+
+        DBIdentifier sName = makeName(rule, name, table, "F");
+        return makeIdentifierValid(sName, table.getSchema().getSchemaGroup(),
+                maxLen, true);
+    }
+
+
+    @Override
+    public DBIdentifier getValidUniqueIdentifier(DBIdentifier name, Table table, int maxLen) {
+        if (DBIdentifier.isNull(name)) {
+            return name;
+        }
+        String rule = name.getType().name();
+        maxLen = getMaxLen(rule, name, maxLen);
+
+        DBIdentifier sName = makeName(rule, name, table, "U");
+        return makeIdentifierValid(sName, table.getSchema().getSchemaGroup(),
+                maxLen, true);
+    }
+
+    @Override
+    public DBIdentifier getValidIndexIdentifier(DBIdentifier name, Table table, int maxLen) {
+        if (DBIdentifier.isNull(name)) {
+            return name;
+        }
+        String rule = name.getType().name();
+        maxLen = getMaxLen(rule, name, maxLen);
+
+        DBIdentifier sName = makeName(rule, name, table, "I");
+        return makeIdentifierValid(sName, table.getSchema().getSchemaGroup(),
+                maxLen, true);
+    }
+
+    @Override
+    public DBIdentifier getValidSequenceIdentifier(DBIdentifier name, Schema schema, int maxLen) {
+        if (DBIdentifier.isNull(name)) {
+            return name;
+        }
+        String rule = name.getType().name();
+        maxLen = getMaxLen(rule, name, maxLen);
+
+        DBIdentifier sName = makeName(rule, name, "S");
+        return makeIdentifierValid(sName, schema.getSchemaGroup(), maxLen, true);
+    }
+
+    @Override
+    public DBIdentifier getValidTableIdentifier(DBIdentifier name, Schema schema, int maxLen) {
+        if (DBIdentifier.isNull(name)) {
+            return name;
+        }
+        String rule = name.getType().name();
+        maxLen = getMaxLen(rule, name, maxLen);
+
+        DBIdentifier sName = makeName(rule, name, null);
+
+        return makeIdentifierValid(sName, schema.getSchemaGroup(),
+                maxLen, true);
+    }
+
+    @Override
+    public DBIdentifier makeNameValid(String name, NameSet set, int maxLen,
+                                      int nameType, boolean checkForUniqueness) {
+        DBIdentifierType id = DBIdentifierType.DEFAULT;
+        switch (nameType) {
+            case DBIdentifierUtil.TABLE:
+                id = DBIdentifierType.TABLE;
+                break;
+            case DBIdentifierUtil.SEQUENCE:
+                id = DBIdentifierType.SEQUENCE;
+                break;
+            case DBIdentifierUtil.COLUMN:
+                id = DBIdentifierType.COLUMN;
+                break;
+            default:
+                // keep default type if unknown nameType provided
+                id = DBIdentifierType.DEFAULT;
+                break;
+        }
+        return makeIdentifierValid(DBIdentifier.newIdentifier(name, id), set, maxLen, checkForUniqueness);
+    }
+
+    /**
+     * Main entry point to validate and possibly mutate an identifier so it is
+     * acceptable for the target database and naming rules.
+     * <p>
+     * This method has been refactored to delegate responsibilities to smaller
+     * helpers to reduce cognitive complexity and to address static analysis issues.
+     */
+    @Override
+    public DBIdentifier makeIdentifierValid(DBIdentifier sname, NameSet set, int maxLen,
+                                            boolean checkForUniqueness) {
+        if (sname == null) {
+            throw new RuntimeException("Identifier cannot be null");
+        }
+
+        DBIdentifier validName = sname;
+        String rule = sname.getType().name();
+
+        maxLen = getMaxLen(rule, validName, maxLen);
+
+        // handle truncation if name is longer than allowed
+        validName = truncateIfNeeded(validName, maxLen);
+
+        // handle reserved words by appending a suffix (0) if required
+        validName = appendSuffixIfReserved(rule, validName, maxLen);
+
+        // ensure uniqueness if requested and a NameSet is provided
+        if (set != null && checkForUniqueness) {
+            validName = ensureUniqueName(validName, set, maxLen);
+        }
+
+        // apply case rules for delimited identifiers or convert to upper-case otherwise
+        if (validName.isDelimited()) {
+            return applyDelimitedCase(validName);
+        }
+        return DBIdentifier.toUpper(validName);
+    }
+
+    /* ----------------- Helper methods used by makeIdentifierValid ----------------- */
+
+    private DBIdentifier truncateIfNeeded(DBIdentifier name, int maxLen) {
+        int nameLen = name.getName().length();
+        if (nameLen > maxLen) {
+            return DBIdentifier.truncate(name, nameLen - maxLen);
+        }
+        return name;
+    }
+
+    private DBIdentifier appendSuffixIfReserved(String rule, DBIdentifier name, int maxLen) {
+        int nameLen = name.getName().length();
+        if (isReservedWord(rule, name.getName())) {
+            if (nameLen == maxLen) {
+                name = DBIdentifier.truncate(name, 1);
+            }
+            name = DBIdentifier.append(name, "0");
+        }
+        return name;
+    }
+
+    /**
+     * Ensure the name is unique within the provided NameSet. This method avoids
+     * modifying loop counters from inside the loop body and keeps the logic
+     * straightforward.
+     */
+    private DBIdentifier ensureUniqueName(DBIdentifier baseName, NameSet set, int maxLen) {
+        DBIdentifier validName = baseName;
+        int nameLen = validName.getName().length();
+
+        // For TABLE and SEQUENCE types, NameSet is actually a SchemaGroup and
+        // we need to check known tables/sequences via SchemaGroup methods.
+        DBIdentifierType type = validName.getType();
+
+        int version = 1;
+        int chars = 1;
+
+        while (true) {
+            boolean taken;
+            if (type == DBIdentifierType.TABLE) {
+                taken = ((SchemaGroup) set).isKnownTable(QualifiedDBIdentifier.getPath(validName));
+            } else if (type == DBIdentifierType.SEQUENCE) {
+                taken = ((SchemaGroup) set).isKnownSequence(QualifiedDBIdentifier.getPath(validName));
+            } else {
+                taken = set.isNameTaken(validName);
+            }
+
+            if (!taken) {
+                break;
+            }
+
+            // prepare next variant
+            if (version > 1) {
+                // remove previously appended version digits before appending new one
+                validName = DBIdentifier.truncate(validName, chars);
+            }
+
+            // increase chars when we overflow the current digit capacity (9 -> 10 -> need 2 chars)
+            if (version >= Math.pow(10, chars)) {
+                chars++;
+            }
+
+            // ensure we have room for the version digits
+            if (nameLen + chars > maxLen) {
+                validName = DBIdentifier.truncate(validName, nameLen + chars - maxLen);
+            }
+
+            validName = DBIdentifier.append(validName, Integer.toString(version));
+            nameLen = validName.getName().length();
+
+            version++;
+        }
+
+        return validName;
+    }
+
+    private DBIdentifier applyDelimitedCase(DBIdentifier name) {
+        String delimCase = getIdentifierConfiguration().getDelimitedCase();
+        if (delimCase.equals(CASE_LOWER)) {
+            return DBIdentifier.toLower(name, true);
+        } else if (delimCase.equals(CASE_UPPER)) {
+            return DBIdentifier.toUpper(name, true);
+        } else {
+            return name;
+        }
+    }
+
+    public boolean isReservedWord(String rule, String name) {
+        IdentifierRule idRule = getIdentifierConfiguration().getIdentifierRule(rule);
+        if (idRule == null) {
+            return false;
+        }
+        // Only treat as reserved if the rule both recognizes the word and
+        // requests reserved-word handling (consistent with original behavior).
+        return idRule.isReservedWord(name) && idRule.getDelimitReservedWords();
+    }
+
+    /**
+     * Converts the name to a name which can be used within a SQL statement.  Uses
+     * the appropriate delimiters and separators.
+     *
+     * @parm name a DBIdentifier
+     */
+    @Override
+    public String toDBName(DBIdentifier name) {
+        return toDBName(name, true);
+    }
+
+    /**
+     * Converts the name to a name which can be used within a SQL statement.  Uses
+     * the appropriate delimiters and separators.
+     *
+     * @param delimit If true, allows the name to be delimited, if necessary.
+     *                Otherwise, the identifier is not delimited.
+     * @parm name a DBIdentifier
+     */
+    @Override
+    public String toDBName(DBIdentifier name, boolean delimit) {
+        if (DBIdentifier.isNull(name)) {
+            return null;
+        }
+        IdentifierConfiguration ic = getIdentifierConfiguration();
+        if (ic.getSupportsDelimitedIdentifiers() && delimit && ic.delimitAll() && !name.isDelimited()) {
+            return delimit(name, true);
+        }
+        String rule = name.getType().name();
+        if (name instanceof QualifiedDBIdentifier) {
+            QualifiedDBIdentifier path = (QualifiedDBIdentifier) name;
+            return convertFull(Normalizer.getNamingConfiguration(), rule, path.getName());
+        }
+        return convert(Normalizer.getNamingConfiguration(), rule, name.getName());
+    }
+
+    /**
+     * Converts the identifier to a format appropriate for the configuration.
+     * Delimits if necessary
+     */
+    @Override
+    public String toDBName(String name) {
+        return toDBName(name, true);
+    }
+
+    /**
+     * Converts the identifier to a format appropriate for the configuration using
+     * the default naming rule.
+     *
+     * @param delimit If false, do not delimit.  Otherwise, delimit if necessary.
+     */
+    @Override
+    public String toDBName(String name, boolean delimit) {
+        return toDBName(getIdentifierConfiguration().getDefaultIdentifierRule().getName(), name, delimit);
+    }
+
+    /**
+     * Converts the identifier to a format appropriate for the configuration using
+     * the specified naming rule.
+     *
+     * @param delimit If false, do not delimit.  Otherwise, delimit if necessary.
+     */
+    private String toDBName(String rule, String name, boolean delimit) {
+        if (name == null) {
+            return null;
+        }
+        IdentifierConfiguration ic = getIdentifierConfiguration();
+        if (ic.getSupportsDelimitedIdentifiers() && delimit && ic.delimitAll() && !Normalizer.isDelimited(name)) {
+            return delimit(rule, name, true);
+        }
+        return convert(Normalizer.getNamingConfiguration(), rule, name);
+    }
+
+    /**
+     * Creates a new identifier of a given type based upon the name returned
+     * from the database.
+     */
+    @Override
+    public DBIdentifier fromDBName(String name, DBIdentifierType id) {
+        if (name == null) {
+            return DBIdentifier.NULL;
+        }
+        if (id == null) {
+            throw new RuntimeException("DBIdentifierType cannot be null");
+        }
+        if (!getIdentifierConfiguration().getSupportsDelimitedIdentifiers()) {
+            return DBIdentifier.newIdentifier(name, id);
+        }
+        String delimCase = getIdentifierConfiguration().getDelimitedCase();
+        String nonDelimCase = getIdentifierConfiguration().getSchemaCase();
+        String caseName = name;
+
+        // If delimited and non-delimited case are the same, don't change
+        // case or try to determine whether delimiting is required.  Let the
+        // normalizer figure it out using standard rules.
+        if (delimCase.equals(nonDelimCase)) {
+            return DBIdentifier.newIdentifier(name, id, false, false, !delimCase.equals(CASE_PRESERVE));
+        }
+
+        // Otherwise, try to determine whether to delimit based on an expected vs.
+        // actual name comparison.
+        if (delimCase.equals(CASE_PRESERVE)) {
+            if (nonDelimCase.equals(CASE_LOWER)) {
+                caseName = name.toLowerCase();
+            } else {
+                caseName = name.toUpperCase();
+            }
+        } else if (delimCase.equals(CASE_LOWER)) {
+            if (nonDelimCase.equals(CASE_UPPER)) {
+                caseName = name.toUpperCase();
+            }
+        } else if (delimCase.equals(CASE_UPPER)) {
+            if (nonDelimCase.equals(CASE_LOWER)) {
+                caseName = name.toLowerCase();
+            }
+        }
+
+        boolean delimit = !caseName.equals(name) || getIdentifierConfiguration().delimitAll();
+        return DBIdentifier.newIdentifier((delimit ? name : caseName), id, false, delimit,
+                !delimCase.equals(CASE_PRESERVE));
+    }
+
+    @Override
+    public DBIdentifier append(DBIdentifierType resultId, DBIdentifier... names) {
+        if (names == null || names.length == 0) {
+            return DBIdentifier.NULL;
+        }
+        DBIdentifier sName = DBIdentifier.newIdentifier("", resultId);
+        for (DBIdentifier name : names) {
+            DBIdentifier.append(sName, name.getName());
+        }
+        return sName;
+    }
+
+    @Override
+    public String appendColumns(Column[] columns) {
+        if (columns == null || columns.length == 0) {
+            return "";
+        }
+        if (columns.length == 1) {
+            return toDBName(columns[0].getIdentifier());
+        }
+        StringBuilder colsb = new StringBuilder();
+        for (int i = 0; i < columns.length; i++) {
+            colsb.append(toDBName(columns[i].getIdentifier()));
+            if (i < (columns.length - 1)) {
+                colsb.append(", ");
+            }
+        }
+        return colsb.toString();
+    }
+
+    public String delimit(DBIdentifier name, boolean force) {
+        String rule = name.getType().name();
+        // If this is a compound path, each item must be delimited separately
+        if (name instanceof QualifiedDBIdentifier) {
+            QualifiedDBIdentifier path = (QualifiedDBIdentifier) name;
+            // Make sure this is a qualified path before delimiting separately
+            if (!((path.getType() == DBIdentifierType.COLUMN &&
+                    path.isUnqualifiedColumn()) ||
+                    (path.getType() != DBIdentifierType.COLUMN &&
+                            path.isUnqualifiedObject()))) {
+                DBIdentifier[] names = QualifiedDBIdentifier.splitPath(name);
+                for (DBIdentifier dbIdentifier : names) {
+                    DBIdentifier sName = dbIdentifier.getUnqualifiedName();
+                    if (!sName.isDelimited()) {
+                        String pRule = sName.getType().name();
+                        dbIdentifier.setName(delimit(pRule, sName.getName(), force));
+                    }
+                }
+                return QualifiedDBIdentifier.newPath(names).getName();
+            }
+        }
+        return delimit(rule, name.getName(), force);
+    }
+
+    /**
+     * Delimit a plain name according to the rule and configuration.
+     * <p>
+     * The 'rule' parameter is used to consult the IdentifierRule for decisions
+     * about whether a particular name requires delimiters.
+     */
+    public String delimit(String rule, String name, boolean force) {
+        IdentifierConfiguration ic = getIdentifierConfiguration();
+        IdentifierRule idRule = ic.getIdentifierRule(rule);
+
+        // If already delimited, return as-is (normalizer will handle)
+        if (Normalizer.isDelimited(name)) {
+            return name;
+        }
+
+        boolean shouldDelimit = force || ic.delimitAll();
+        if (!shouldDelimit && idRule != null) {
+            shouldDelimit = idRule.requiresDelimiters(name);
+        }
+
+        if (shouldDelimit) {
+            return ic.getLeadingDelimiter() + name + ic.getTrailingDelimiter();
+        }
+
+        // fallback to conversion rules (case/format) when not delimiting
+        return convert(Normalizer.getNamingConfiguration(), rule, name);
+    }
+
+    public String shorten(String name, int targetLength) {
+        return DBDictionary.shorten(name, targetLength);
+    }
+
+    @Override
+    public DBIdentifier getGeneratedKeySequenceName(Column col, int maxLen) {
+        DBIdentifier tname = col.getTableIdentifier();
+        DBIdentifier cname = col.getIdentifier();
+        int extraChars = -maxLen + tname.getName().length() + 1 // <tname> + '_'
+                + cname.getName().length() + 4; // <cname> + '_SEQ'
+        String tsname = tname.getName();
+        if (extraChars > 0) {
+            // this assumes that tname is longer than extraChars
+            tsname = tsname.substring(0, tsname.length() - extraChars);
+        }
+        return DBIdentifier.combine(DBIdentifierType.SEQUENCE, tsname, cname.getName(), "SEQ");
+    }
+
+    /**
+     * Convert the specified schema name to a name that the database will
+     * be able to understand in metadata operations.
+     */
+    @Override
+    public DBIdentifier convertSchemaCase(DBIdentifier name) {
+        if (DBIdentifier.isNull(name))
+            return DBIdentifier.NULL;
+
+        DBIdentifier sName = name.clone();
+        // Handle delimited string differently. Return unquoted name.
+        String delimCase = getIdentifierConfiguration().getDelimitedCase();
+        if (/* getNamingConfiguration().delimitAll() || */ name.isDelimited()) {
+            if (CASE_UPPER.equals(delimCase)) {
+                sName = DBIdentifier.toUpper(sName, true);
+            } else if (CASE_LOWER.equals(delimCase)) {
+                sName = DBIdentifier.toLower(sName, true);
+            }
+
+            return DBIdentifier.removeDelimiters(sName);
+        }
+        if (!getIdentifierConfiguration().delimitAll()) {
+            // Not delimited, use the base schema case expected by the DB
+            String schemaCase = getIdentifierConfiguration().getSchemaCase();
+            if (CASE_LOWER.equals(schemaCase))
+                return DBIdentifier.toLower(sName);
+            if (CASE_PRESERVE.equals(schemaCase))
+                return sName;
+            return DBIdentifier.toUpper(sName);
+        }
+        return sName;
+    }
+
+    /**
+     * Converts a column alias to use the appropriate delimiters
+     */
+    @Override
+    public String convertAlias(String alias) {
+        if (!needsConversion(getIdentifierConfiguration())) {
+            return alias;
+        }
+
+        String[] names = Normalizer.splitName(alias);
+        if (names.length <= 1) {
+            // Nothing to split
+            return alias;
+        }
+        // Skip the the first name.  It is the alias (T0, T1, etc.)
+        for (int i = 1; i < names.length; i++) {
+            names[i] = toDBName(getIdentifierConfiguration().getDefaultIdentifierRule().toString(), names[i], true);
+        }
+        return joinNames(getIdentifierConfiguration().getDefaultIdentifierRule(), names);
+    }
+
+    private DBIdentifier makeName(String rule, DBIdentifier name, Table tbl, String prefix) {
+        DBIdentifier sName = DBIdentifier.removeLeading(name, IdentifierUtil.UNDERSCORE);
+        String tableName = tbl.getIdentifier().getName();
+        int len = Math.min(tableName.length(), 7);
+
+        // Combine the names using the normalized configuration.
+        String str = combineNames(Normalizer.getNamingConfiguration(), rule,
+                new String[]{prefix == null ? "" : prefix,
+                        shorten(tableName, len), sName.getName()});
+        sName.setName(str);
+        return sName;
+    }
+
+    private DBIdentifier makeName(String rule, DBIdentifier name, String prefix) {
+        DBIdentifier sName = DBIdentifier.removeLeading(name, IdentifierUtil.UNDERSCORE);
+        if (!StringUtil.isEmpty(prefix)) {
+            sName = DBIdentifier.preCombine(sName, prefix);
+        }
+        return sName;
+    }
+
+    private int getMaxLen(String rule, DBIdentifier name, int maxLen) {
+        IdentifierConfiguration config = getIdentifierConfiguration();
+        if (maxLen < 1) {
+            IdentifierRule nrule = config.getIdentifierRule(rule);
+            maxLen = nrule.getMaxLength();
+        }
+        // Subtract delimiter length if name is delimited or will be delimited
+        if (config.delimitAll() || name.isDelimited()) {
+            maxLen = maxLen - (config.getLeadingDelimiter().length() + config.getTrailingDelimiter().length());
+        }
+
+        return maxLen;
+    }
+
+    /**
+     * System configuration.
+     */
+    public JDBCConfiguration getConfiguration() {
+        return conf;
+    }
+
+    @Override
+    public void setConfiguration(Configuration conf) {
+        this.conf = (JDBCConfiguration) conf;
+    }
+}
